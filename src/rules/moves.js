@@ -7,7 +7,7 @@ import { getUnit, otherPlayer } from './state.js';
 
 export const MAX_UNITS_PER_CELL = 2;
 
-function unitsOnCell(state, cell) {
+export function unitsOnCell(state, cell) {
   if (cell === null) return [];
   return state.units.filter((u) => cellId(u.player, u.pos) === cell);
 }
@@ -18,12 +18,22 @@ export function isCommanderLocked(state, player) {
   );
 }
 
-/**
- * Can `count` units of `player` land on path position `target`?
- */
+function isBackward(state, player) {
+  return Boolean(state.backward?.[player]);
+}
+
+/** Destination of `unit` moving `steps`, or null if it can't move at all. */
+function destination(state, unit, steps) {
+  if (unit.pos === ASCENDED) return null;
+  if (!isBackward(state, unit.player)) return unit.pos + steps;
+  if (unit.pos === HOME) return null;
+  return Math.max(HOME, unit.pos - steps);
+}
+
+/** Can `count` units of `player` land on path position `target`? */
 function canLand(state, player, target, count) {
+  if (target === HOME || target === ASCENDED) return true;
   if (target > ASCENDED) return false;
-  if (target === ASCENDED) return true;
   const occupants = unitsOnCell(state, cellId(player, target));
   const own = occupants.filter((u) => u.player === player).length;
   const enemy = occupants.length - own;
@@ -31,19 +41,18 @@ function canLand(state, player, target, count) {
   return own + count <= MAX_UNITS_PER_CELL;
 }
 
-/**
- * All valid moves for `player` with a number card worth `steps`.
- */
+/** All valid moves for `player` with a number card worth `steps`. */
 export function legalMoves(state, player, steps) {
   if (!Number.isInteger(steps) || steps < 1) {
     throw new Error('legalMoves: steps must be a positive integer');
   }
   const moves = [];
   for (const unit of state.units) {
-    if (unit.player !== player || unit.pos === ASCENDED) continue;
+    if (unit.player !== player) continue;
     if (unit.type === 'commander' && isCommanderLocked(state, player)) continue;
+    const target = destination(state, unit, steps);
+    if (target === null) continue;
 
-    const target = unit.pos + steps;
     if (canLand(state, player, target, 1)) moves.push({ unit: unit.id });
 
     if (unit.type === 'commander' && unit.pos !== HOME && canLand(state, player, target, 2)) {
@@ -66,6 +75,11 @@ function sameMove(a, b) {
   return a.unit === b.unit && (a.escort ?? null) === (b.escort ?? null);
 }
 
+/** Returns `units` with every unit matching `predicate` moved to HOME. */
+export function sendHome(units, predicate) {
+  return units.map((u) => (predicate(u) ? { ...u, pos: HOME } : u));
+}
+
 /**
  * Applies a move that must be one of legalMoves(state, state.current, steps).
  * Returns the new state; the turn passes to the other player unless the game
@@ -80,44 +94,45 @@ export function applyMove(state, move, steps) {
   }
 
   const movingIds = new Set([move.unit, move.escort].filter(Boolean));
-  const target = getUnit(state, move.unit).pos + steps;
+  const target = destination(state, getUnit(state, move.unit), steps);
   const targetCell = cellId(player, target);
 
-  const units = state.units.map((u) => {
-    if (movingIds.has(u.id)) return { ...u, pos: target };
-    if (
-      targetCell !== null &&
-      u.player !== player &&
-      cellId(u.player, u.pos) === targetCell
-    ) {
-      return { ...u, pos: HOME };
-    }
-    return u;
-  });
+  let units = state.units.map((u) => (movingIds.has(u.id) ? { ...u, pos: target } : u));
+  if (targetCell !== null) {
+    units = sendHome(
+      units,
+      (u) => u.player !== player && cellId(u.player, u.pos) === targetCell,
+    );
+  }
 
   const won = units
     .filter((u) => u.player === player)
     .every((u) => u.pos === ASCENDED);
 
+  const backward = [...(state.backward ?? [false, false])];
+  backward[player] = false;
+
   return {
     ...state,
     units,
+    backward,
+    drawn: null,
     winner: won ? player : null,
     current: won ? state.current : otherPlayer(player),
   };
 }
 
 /**
- * Plays a number card for the current player. Pass `move` when at least one
- * legal move exists (moving is mandatory); pass null when none exists, which
- * forfeits the turn.
+ * Plays a number card worth `steps` for the current player. Pass `move` when
+ * at least one legal move exists (moving is mandatory); pass null when none
+ * exists, which forfeits the turn.
  */
 export function playNumberCard(state, steps, move = null) {
   if (state.winner !== null) throw new Error('playNumberCard: the game is over');
   const legal = legalMoves(state, state.current, steps);
   if (legal.length === 0) {
     if (move !== null) throw new Error('playNumberCard: no legal move exists');
-    return { ...state, current: otherPlayer(state.current) };
+    return { ...state, drawn: null, current: otherPlayer(state.current) };
   }
   if (move === null) throw new Error('playNumberCard: a legal move must be made');
   return applyMove(state, move, steps);

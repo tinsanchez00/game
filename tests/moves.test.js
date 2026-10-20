@@ -145,7 +145,7 @@ test('towers give no extra turn', () => {
 // --- ascension and winning ---
 
 test('a unit ascends only with the exact count', () => {
-  const g = gameWith({ 'p0-s1': 13, 'p0-s2': 12 });
+  const g = gameWith({ 'p0-s1': 14, 'p0-s2': 13 });
   assert.ok(has(legalMoves(g, 0, 1), 'p0-s1'));
   assert.ok(!has(legalMoves(g, 0, 2), 'p0-s1'));
   assert.ok(has(legalMoves(g, 0, 2), 'p0-s2'));
@@ -159,7 +159,7 @@ test('ascended units cannot move', () => {
 });
 
 test('an escorted soldier ascends with the commander', () => {
-  const g = gameWith({ ...soldiersOut(0, [12, 1, 2, 3, 5]), 'p0-c': 12 });
+  const g = gameWith({ ...soldiersOut(0, [13, 1, 2, 3, 5]), 'p0-c': 13 });
   const after = applyMove(g, { unit: 'p0-c', escort: 'p0-s1' }, 2);
   assert.equal(pos(after, 'p0-c'), ASCENDED);
   assert.equal(pos(after, 'p0-s1'), ASCENDED);
@@ -168,7 +168,7 @@ test('an escorted soldier ascends with the commander', () => {
 test('ascending all six units wins the game', () => {
   const g = gameWith({
     ...soldiersOut(0, [ASCENDED, ASCENDED, ASCENDED, ASCENDED, ASCENDED]),
-    'p0-c': 13,
+    'p0-c': 14,
   });
   const after = applyMove(g, { unit: 'p0-c' }, 1);
   assert.equal(after.winner, 0);
@@ -185,12 +185,12 @@ test('the turn passes to the other player after a move', () => {
 test('with no valid move the turn is lost', () => {
   const g = gameWith({
     ...soldiersOut(0, [ASCENDED, ASCENDED, ASCENDED, ASCENDED, ASCENDED]),
-    'p0-c': 13,
+    'p0-c': 14,
   });
   assert.equal(legalMoves(g, 0, 3).length, 0);
   const after = playNumberCard(g, 3, null);
   assert.equal(after.current, 1);
-  assert.equal(pos(after, 'p0-c'), 13);
+  assert.equal(pos(after, 'p0-c'), 14);
   assert.throws(() => playNumberCard(g, 3, { unit: 'p0-c' }));
 });
 

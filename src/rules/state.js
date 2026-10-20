@@ -1,8 +1,21 @@
 // Game state is a plain, JSON-serializable object so it can be stored and
 // synced as-is. Functions in src/rules never mutate a state; they return a
 // new one.
+//
+// {
+//   rng,                 uint32 generator state (see random.js)
+//   current, winner,     player index (0 | 1); winner is null until decided
+//   units,               [{ id, player, type: 'soldier'|'commander', pos }]
+//   moveDecks,           per player: { draw: [...], discard: [...] }, top first
+//   powerDeck,           top first
+//   held,                per player: power id or null
+//   backward,            per player: pending reverse movement flag
+//   drawn,               the current player's drawn card, or null
+// }
 
 import { HOME } from './board.js';
+import { MOVE_DECK, STARTING_POWER_DECK } from './cards.js';
+import { nextRandom, randomSeed, shuffle } from './random.js';
 
 export const PLAYERS = Object.freeze([0, 1]);
 export const SOLDIERS_PER_TEAM = 5;
@@ -21,16 +34,42 @@ function teamUnits(player) {
 }
 
 /**
- * @param {{ firstPlayer: 0 | 1 }} options
+ * @param {{ seed?: number, firstPlayer?: 0 | 1 }} options
+ *   seed: makes the game reproducible; random when omitted.
+ *   firstPlayer: picked with the seeded generator when omitted.
  */
-export function createGame({ firstPlayer } = {}) {
-  if (!PLAYERS.includes(firstPlayer)) {
+export function createGame({ seed = randomSeed(), firstPlayer } = {}) {
+  if (firstPlayer !== undefined && !PLAYERS.includes(firstPlayer)) {
     throw new Error('createGame: firstPlayer must be 0 or 1');
   }
+  let rng = seed >>> 0;
+
+  let current = firstPlayer;
+  if (current === undefined) {
+    const roll = nextRandom(rng);
+    rng = roll.rng;
+    current = roll.value < 0.5 ? 0 : 1;
+  }
+
+  const moveDecks = [];
+  for (const player of PLAYERS) {
+    const s = shuffle(MOVE_DECK, rng);
+    rng = s.rng;
+    moveDecks[player] = { draw: s.items, discard: [] };
+  }
+  const powers = shuffle(STARTING_POWER_DECK, rng);
+  rng = powers.rng;
+
   return {
-    current: firstPlayer,
+    rng,
+    current,
     winner: null,
     units: [...teamUnits(0), ...teamUnits(1)],
+    moveDecks,
+    powerDeck: powers.items,
+    held: [null, null],
+    backward: [false, false],
+    drawn: null,
   };
 }
 

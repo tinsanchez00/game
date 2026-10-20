@@ -3,11 +3,13 @@ import { createGame } from '../src/rules/index.js';
 /**
  * A new game with some units placed at given path positions.
  * @param {Record<string, number>} positions unit id -> path position
+ * @param {object} options firstPlayer, seed, and any state fields to override
  */
-export function gameWith(positions = {}, { firstPlayer = 0 } = {}) {
-  const state = createGame({ firstPlayer });
+export function gameWith(positions = {}, { firstPlayer = 0, seed = 1, ...overrides } = {}) {
+  const state = createGame({ firstPlayer, seed });
   return {
     ...state,
+    ...overrides,
     units: state.units.map((u) =>
       u.id in positions ? { ...u, pos: positions[u.id] } : u,
     ),
