@@ -1,0 +1,10 @@
+{
+  "name": "board-game",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Play-testing app for an original board game inspired by the Royal Game of Ur",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.js\""
+  }
+}
