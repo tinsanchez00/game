@@ -59,12 +59,6 @@ function sameChoice(a, b) {
 
 // --- effects -------------------------------------------------------------
 
-function hangedMan(state, player) {
-  const backward = [...state.backward];
-  backward[player] = true;
-  return { ...state, backward };
-}
-
 function lovers(state, { unit, target }) {
   const pos = getUnit(state, target).pos;
   return {
@@ -114,6 +108,7 @@ function hermit(state) {
 /**
  * Applies `power` for `player` with `args` (one of powerChoices). Returns the
  * new state; does not touch turn order, held powers or the power deck.
+ * The Hanged Man changes no units here: its draw is handled in turn.js.
  */
 export function applyPower(state, player, power, args = {}) {
   const valid = powerChoices(state, player, power);
@@ -122,7 +117,7 @@ export function applyPower(state, player, power, args = {}) {
   }
   switch (power) {
     case POWERS.HANGED_MAN:
-      return hangedMan(state, player);
+      return state;
     case POWERS.LOVERS:
       return lovers(state, args);
     case POWERS.DEVIL:
@@ -135,6 +130,3 @@ export function applyPower(state, player, power, args = {}) {
       throw new Error(`applyPower: unknown power ${power}`);
   }
 }
-
-/** Powers after which the same player takes another turn. */
-export const EXTRA_TURN_POWERS = Object.freeze([POWERS.HANGED_MAN]);

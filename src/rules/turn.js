@@ -4,12 +4,16 @@
 //   number card: currentMoves(state), then playDrawnNumber(state, move | null)
 //   joker:       draftOptions(state), then playDraft(state, keepIndex)
 //            or  heldPowerChoices(state), then playHeldPower(state, args)
+//
+// Playing the Hanged Man draws again at once and sets state.hangedDraw; that
+// card is then resolved through the same functions (a number card moves a
+// unit backward, a joker can only draft), after which the same player takes
+// another turn.
 
-import { JOKER, MOVE_DECK, isNumberCard } from './cards.js';
-import { legalMoves, playNumberCard } from './moves.js';
-import { EXTRA_TURN_POWERS, applyPower, powerChoices } from './powers.js';
+import { JOKER, MOVE_DECK, POWERS, isNumberCard } from './cards.js';
+import { endTurn, legalMoves, playNumberCard } from './moves.js';
+import { applyPower, powerChoices } from './powers.js';
 import { shuffle } from './random.js';
-import { otherPlayer } from './state.js';
 
 function assertPlaying(state, fn) {
   if (state.winner !== null) throw new Error(`${fn}: the game is over`);
@@ -82,11 +86,12 @@ export function playDraft(state, keepIndex) {
     ...unpicked,
   ];
 
-  return { ...state, held, powerDeck, drawn: null, current: otherPlayer(player) };
+  return endTurn({ ...state, held, powerDeck });
 }
 
 export function heldPowerChoices(state) {
   assertJoker(state, 'heldPowerChoices');
+  if (state.hangedDraw) return [];
   const power = state.held[state.current];
   if (!power) return [];
   return powerChoices(state, state.current, power);
@@ -98,6 +103,9 @@ export function canPlayHeldPower(state) {
 
 export function playHeldPower(state, args = {}) {
   assertJoker(state, 'playHeldPower');
+  if (state.hangedDraw) {
+    throw new Error('playHeldPower: a joker drawn by the Hanged Man can only draft');
+  }
   const player = state.current;
   const power = state.held[player];
   if (!power) throw new Error('playHeldPower: no power held');
@@ -105,12 +113,10 @@ export function playHeldPower(state, args = {}) {
   const after = applyPower(state, player, power, args);
   const held = [...after.held];
   held[player] = null;
+  const played = { ...after, held, powerDeck: [...after.powerDeck, power] };
 
-  return {
-    ...after,
-    held,
-    powerDeck: [...after.powerDeck, power],
-    drawn: null,
-    current: EXTRA_TURN_POWERS.includes(power) ? player : otherPlayer(player),
-  };
+  if (power === POWERS.HANGED_MAN) {
+    return drawCard({ ...played, drawn: null, hangedDraw: true });
+  }
+  return endTurn(played);
 }

@@ -19,7 +19,7 @@ export function isCommanderLocked(state, player) {
 }
 
 function isBackward(state, player) {
-  return Boolean(state.backward?.[player]);
+  return Boolean(state.hangedDraw) && player === state.current;
 }
 
 /** Destination of `unit` moving `steps`, or null if it can't move at all. */
@@ -109,16 +109,24 @@ export function applyMove(state, move, steps) {
     .filter((u) => u.player === player)
     .every((u) => u.pos === ASCENDED);
 
-  const backward = [...(state.backward ?? [false, false])];
-  backward[player] = false;
+  return {
+    ...endTurn(state),
+    units,
+    winner: won ? player : null,
+    ...(won ? { current: player } : {}),
+  };
+}
 
+/**
+ * Clears the drawn card and hands the turn over, except after a Hanged Man
+ * draw, which is followed by another turn for the same player.
+ */
+export function endTurn(state) {
   return {
     ...state,
-    units,
-    backward,
     drawn: null,
-    winner: won ? player : null,
-    current: won ? state.current : otherPlayer(player),
+    hangedDraw: false,
+    current: state.hangedDraw ? state.current : otherPlayer(state.current),
   };
 }
 
@@ -132,7 +140,7 @@ export function playNumberCard(state, steps, move = null) {
   const legal = legalMoves(state, state.current, steps);
   if (legal.length === 0) {
     if (move !== null) throw new Error('playNumberCard: no legal move exists');
-    return { ...state, drawn: null, current: otherPlayer(state.current) };
+    return endTurn(state);
   }
   if (move === null) throw new Error('playNumberCard: a legal move must be made');
   return applyMove(state, move, steps);

@@ -9,8 +9,8 @@
 //   moveDecks,           per player: { draw: [...], discard: [...] }, top first
 //   powerDeck,           top first
 //   held,                per player: power id or null
-//   backward,            per player: pending reverse movement flag
 //   drawn,               the current player's drawn card, or null
+//   hangedDraw,          true while `drawn` came from playing the Hanged Man
 // }
 
 import { HOME } from './board.js';
@@ -68,8 +68,8 @@ export function createGame({ seed = randomSeed(), firstPlayer } = {}) {
     moveDecks,
     powerDeck: powers.items,
     held: [null, null],
-    backward: [false, false],
     drawn: null,
+    hangedDraw: false,
   };
 }
 

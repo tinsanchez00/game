@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   HOME, JOKER, POWERS,
-  canPlayHeldPower, drawCard, heldPowerChoices, legalMoves, playDrawnNumber,
-  playHeldPower, playNumberCard,
+  canPlayHeldPower, currentMoves, draftOptions, drawCard, heldPowerChoices,
+  playDraft, playDrawnNumber, playHeldPower,
 } from '../src/rules/index.js';
 import { gameWith, pos, soldiersOut } from './helpers.js';
 
@@ -19,53 +19,79 @@ function playing(power, positions = {}, extra = {}) {
 
 // --- The Hanged Man ---
 
-test('Hanged Man grants another turn', () => {
-  const after = playHeldPower(playing(POWERS.HANGED_MAN, { 'p0-s1': 6 }));
-  assert.equal(after.current, 0);
-  assert.equal(after.drawn, null);
+/** Player 0 plays the Hanged Man; their deck then yields `next`. */
+function hanged(positions, next = [3], extra = {}) {
+  return playHeldPower(playing(POWERS.HANGED_MAN, positions, {
+    moveDecks: [{ draw: [JOKER, ...next, 1], discard: [] }, { draw: [1], discard: [] }],
+    ...extra,
+  }));
+}
+
+test('Hanged Man: playing it immediately draws a card', () => {
+  const g = hanged({ 'p0-s1': 9 });
+  assert.equal(g.current, 0);
+  assert.equal(g.drawn, 3);
+  assert.equal(g.hangedDraw, true);
+  assert.equal(g.held[0], null);
+  assert.deepEqual(g.powerDeck, [POWERS.HANGED_MAN]);
 });
 
-test('Hanged Man: the next unit moved goes backward', () => {
-  let g = playHeldPower(playing(POWERS.HANGED_MAN, { 'p0-s1': 9 }));
-  g = drawCard(g); // 3
-  g = playDrawnNumber(g, { unit: 'p0-s1' });
+test('Hanged Man: a number card moves a unit backward, then you go again', () => {
+  const g = playDrawnNumber(hanged({ 'p0-s1': 9 }), { unit: 'p0-s1' });
   assert.equal(pos(g, 'p0-s1'), 6);
+  assert.equal(g.current, 0);
+  assert.equal(g.drawn, null);
+  assert.equal(g.hangedDraw, false);
+});
+
+test('Hanged Man: the extra turn moves forward again', () => {
+  let g = playDrawnNumber(hanged({ 'p0-s1': 9 }), { unit: 'p0-s1' });
+  g = playDrawnNumber(drawCard(g), { unit: 'p0-s1' }); // draws 1
+  assert.equal(pos(g, 'p0-s1'), 7);
   assert.equal(g.current, 1);
 });
 
-test('Hanged Man: only one move goes backward', () => {
-  let g = playHeldPower(playing(POWERS.HANGED_MAN, { 'p0-s1': 9 }));
-  g = playDrawnNumber(drawCard(g), { unit: 'p0-s1' });
-  assert.equal(g.backward[0], false);
-});
-
 test('Hanged Man: a backward move can kill', () => {
-  let g = playHeldPower(playing(POWERS.HANGED_MAN, { 'p0-s1': 9, 'p1-s1': 6 }));
-  g = playDrawnNumber(drawCard(g), { unit: 'p0-s1' });
+  const g = playDrawnNumber(hanged({ 'p0-s1': 9, 'p1-s1': 6 }), { unit: 'p0-s1' });
   assert.equal(pos(g, 'p0-s1'), 6);
   assert.equal(pos(g, 'p1-s1'), HOME);
 });
 
 test('Hanged Man: going back past the first cell sends the unit home', () => {
-  let g = playHeldPower(playing(POWERS.HANGED_MAN, { 'p0-s1': 2 }));
-  g = playDrawnNumber(drawCard(g), { unit: 'p0-s1' });
+  const g = playDrawnNumber(hanged({ 'p0-s1': 2 }), { unit: 'p0-s1' });
   assert.equal(pos(g, 'p0-s1'), HOME);
 });
 
-test('Hanged Man: units at home cannot move backward', () => {
-  const g = playHeldPower(playing(POWERS.HANGED_MAN, {}));
-  assert.equal(legalMoves(g, 0, 3).length, 0);
-});
-
-test('Hanged Man: a lost turn keeps the effect waiting', () => {
-  let g = playHeldPower(playing(POWERS.HANGED_MAN, {}));
-  g = playNumberCard(g, 3, null);
-  assert.equal(g.backward[0], true);
-});
-
 test('Hanged Man: backward moves respect towers', () => {
-  const g = playHeldPower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11, 'p1-s1': 8 }));
-  assert.ok(!legalMoves(g, 0, 3).some((m) => m.unit === 'p0-s1'));
+  const g = hanged({ 'p0-s1': 11, 'p1-s1': 8 });
+  assert.ok(!currentMoves(g).some((m) => m.unit === 'p0-s1'));
+});
+
+test('Hanged Man: you must move backward when you can', () => {
+  assert.throws(() => playDrawnNumber(hanged({ 'p0-s1': 9 }), null));
+});
+
+test('Hanged Man: with no backward move, nothing moves but you go again', () => {
+  const g = hanged({}); // every unit at home
+  assert.equal(currentMoves(g).length, 0);
+  const after = playDrawnNumber(g, null);
+  assert.equal(after.current, 0);
+  assert.equal(after.hangedDraw, false);
+});
+
+test('Hanged Man: a joker means no backward move; you draft, then go again', () => {
+  const g = hanged({ 'p0-s1': 9 }, [JOKER], {
+    powerDeck: [POWERS.TOWER, POWERS.HERMIT],
+  });
+  assert.equal(g.drawn, JOKER);
+  assert.ok(!canPlayHeldPower(g));
+  assert.throws(() => playHeldPower(g));
+  assert.deepEqual(draftOptions(g), [POWERS.TOWER, POWERS.HERMIT]);
+  const after = playDraft(g, 0);
+  assert.equal(after.held[0], POWERS.TOWER);
+  assert.equal(after.current, 0);
+  assert.equal(after.hangedDraw, false);
+  assert.equal(pos(after, 'p0-s1'), 9);
 });
 
 // --- The Lovers ---
