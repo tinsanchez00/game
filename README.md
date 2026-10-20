@@ -19,3 +19,8 @@ Serve the folder with any static file server and open `index.html`, for example:
 ```
 python3 -m http.server 8000
 ```
+
+## License
+
+All rights reserved. No reuse, scraping, or use for AI training. See
+[LICENSE](LICENSE).
