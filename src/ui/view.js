@@ -44,7 +44,7 @@ function describeCell(slot, units) {
 
 function cell(slot, g, ix, victims, victimKeys) {
   if (slot.gap) return '<div class="slot gap"></div>';
-  const units = g.units.filter((u) => unitKey(u) === slot.key);
+  const units = g.units.filter((u) => unitKey(g, u) === slot.key);
   const cls = ['slot', 'cell', ...(slot.tower ? ['tower'] : []), ...stateClasses(slot.key, ix, victimKeys)];
   const inner = (slot.tower ? towerGlyph() : '') + unitsMarkup(units, victims);
   const label = esc(describeCell(slot, units));
@@ -56,10 +56,12 @@ function cell(slot, g, ix, victims, victimKeys) {
 
 function board(g, viewer, ix, victims, victimKeys) {
   const other = R.otherPlayer(viewer);
-  const cells = boardSlots(viewer).map((s) => cell(s, g, ix, victims, victimKeys)).join('');
+  const slots = boardSlots(viewer, g.config);
+  const columns = slots.filter((s) => s.row === 0).length;
+  const cells = slots.map((s) => cell(s, g, ix, victims, victimKeys)).join('');
   return `<section class="board-area" aria-label="Board">
     <span class="lane">${esc(TEXT.lane(team(other)))}</span>
-    <div class="board-frame"><div class="board">${cells}</div></div>
+    <div class="board-frame"><div class="board" style="grid-template-columns: repeat(${columns}, minmax(0, 1fr))">${cells}</div></div>
     <span class="lane">${esc(TEXT.lane(team(viewer)))}</span>
   </section>`;
 }
@@ -70,7 +72,8 @@ function counts(g, player) {
   const mine = g.units.filter((u) => u.player === player);
   return {
     home: mine.filter((u) => u.pos === R.HOME),
-    ascended: mine.filter((u) => u.pos === R.ASCENDED).length,
+    ascended: mine.filter((u) => u.pos === R.geometry(g.config).ascended).length,
+    total: mine.length,
     deck: g.moveDecks[player].draw.length,
   };
 }
@@ -83,7 +86,7 @@ function opponentPanel(g, player) {
   return `<section class="panel opponent" aria-label="${esc(team(player))}">
     <div class="panel-head">
       <h2 class="team">${esc(team(player))}</h2>
-      <div class="stats"><span>${esc(TEXT.home)} ${c.home.length}</span><span>${esc(TEXT.ascended(c.ascended))}</span></div>
+      <div class="stats"><span>${esc(TEXT.home)} ${c.home.length}</span><span>${esc(TEXT.ascended(c.ascended, c.total))}</span></div>
     </div>
     <div class="cards small">
       <div class="card-slot"><div class="card back deck"></div><span class="lbl">${esc(TEXT.left(c.deck))}</span></div>
@@ -129,7 +132,7 @@ function playerPanel(m, ix, victims, victimKeys) {
     `<span>${esc(TEXT.home)}</span>${homeIcons}${locked ? lockIcon() : ''}`,
     ix, victimKeys, `${TEXT.home}: ${c.home.length}`,
   );
-  const ascTray = tray(`asc:${p}`, `<span>${esc(TEXT.ascended(c.ascended))}</span>`, ix, victimKeys, TEXT.ascended(c.ascended));
+  const ascTray = tray(`asc:${p}`, `<span>${esc(TEXT.ascended(c.ascended, c.total))}</span>`, ix, victimKeys, TEXT.ascended(c.ascended, c.total));
 
   const canDraw = ix.phase === 'draw';
   const deck = canDraw
@@ -207,6 +210,10 @@ function actions(m, ix) {
       status = S.stuck(g.drawn, g.hangedDraw);
       controls = `<div class="buttons">${btn('continue', TEXT.continue, { primary: true })}</div>`;
       break;
+    case 'jokerPass':
+      status = S.jokerPass;
+      controls = `<div class="buttons">${btn('continue', TEXT.continue, { primary: true })}</div>`;
+      break;
     case 'joker': {
       status = S.joker;
       const held = g.held[g.current];
@@ -263,7 +270,7 @@ export function view(m) {
   const g = m.game;
   const ix = interactions(m);
   const victims = new Set(ix.victims);
-  const victimKeys = new Set(ix.victims.map((id) => unitKey(R.getUnit(g, id))));
+  const victimKeys = new Set(ix.victims.map((id) => unitKey(g, R.getUnit(g, id))));
   return `<div class="app">
     ${topBar(m)}
     ${opponentPanel(g, R.otherPlayer(m.ui.viewer))}

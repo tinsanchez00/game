@@ -1,6 +1,8 @@
-export const JOKER = 'joker';
+import { DEFAULT_CONFIG, JOKER } from './config.js';
 
-export const MOVE_DECK = Object.freeze([1, 2, 2, 3, 3, 3, 4, JOKER, JOKER]);
+export { JOKER };
+
+export const MOVE_DECK = DEFAULT_CONFIG.moveDeck;
 
 export const POWERS = Object.freeze({
   HANGED_MAN: 'hanged-man',
@@ -10,13 +12,7 @@ export const POWERS = Object.freeze({
   HERMIT: 'hermit',
 });
 
-export const STARTING_POWER_DECK = Object.freeze([
-  POWERS.HANGED_MAN,
-  POWERS.LOVERS,
-  POWERS.DEVIL,
-  POWERS.TOWER,
-  POWERS.HERMIT,
-]);
+export const STARTING_POWER_DECK = DEFAULT_CONFIG.powerDeck;
 
 export function isNumberCard(card) {
   return Number.isInteger(card);

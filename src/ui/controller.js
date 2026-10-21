@@ -21,10 +21,11 @@ function freshUi(viewer, events = []) {
 }
 
 /** Where a unit is: a board cell id, or `home:<player>` / `asc:<player>`. */
-export function unitKey(u) {
+export function unitKey(state, u) {
+  const geo = R.geometry(state.config);
   if (u.pos === R.HOME) return `home:${u.player}`;
-  if (u.pos === R.ASCENDED) return `asc:${u.player}`;
-  return R.cellId(u.player, u.pos);
+  if (u.pos === geo.ascended) return `asc:${u.player}`;
+  return geo.cellId(u.player, u.pos);
 }
 
 // --- phases ---------------------------------------------------------------
@@ -35,6 +36,7 @@ export function phaseOf(m) {
   if (g.current !== m.ui.viewer) return 'handoff';
   if (g.drawn === null) return 'draw';
   if (R.isNumberCard(g.drawn)) return R.currentMoves(g).length > 0 ? 'move' : 'stuck';
+  if (R.mustPassJoker(g)) return 'jokerPass';
   if (g.hangedDraw || m.ui.joker === 'draft') return 'draft';
   if (m.ui.joker === 'play') return g.held[g.current];
   return 'joker';
@@ -51,7 +53,7 @@ function signature(g, move) {
 function moveSources(g) {
   const sources = new Map();
   for (const move of R.currentMoves(g)) {
-    const key = unitKey(R.getUnit(g, move.unit));
+    const key = unitKey(g, R.getUnit(g, move.unit));
     const sig = signature(g, move);
     const list = sources.get(key) ?? [];
     if (!list.some((o) => o.sig === sig)) list.push({ sig, move });
@@ -71,7 +73,7 @@ function previewMove(g, move) {
   const after = R.applyMove(g, move, g.drawn);
   const moving = new Set([move.unit, move.escort].filter(Boolean));
   return {
-    dest: unitKey(R.getUnit(after, move.unit)),
+    dest: unitKey(after, R.getUnit(after, move.unit)),
     victims: changedToHome(g, after, moving),
   };
 }
@@ -83,13 +85,13 @@ function candidatesAt(g, ids, key) {
   const byType = {};
   for (const id of ids) {
     const u = R.getUnit(g, id);
-    if (unitKey(u) === key && !(u.type in byType)) byType[u.type] = id;
+    if (unitKey(g, u) === key && !(u.type in byType)) byType[u.type] = id;
   }
   return byType;
 }
 
 function uniqueKeys(g, ids) {
-  return [...new Set(ids.map((id) => unitKey(R.getUnit(g, id))))];
+  return [...new Set(ids.map((id) => unitKey(g, R.getUnit(g, id))))];
 }
 
 // --- what the screen should offer -------------------------------------------
@@ -127,7 +129,7 @@ export function interactions(m) {
     const choices = R.heldPowerChoices(g);
     if (pick?.unit) {
       const mine = choices.filter((c) => c.unit === pick.unit);
-      out.selected = unitKey(R.getUnit(g, pick.unit));
+      out.selected = unitKey(g, R.getUnit(g, pick.unit));
       out.targets = uniqueKeys(g, mine.map((c) => c.target));
       out.tappable = [...out.targets, ...uniqueKeys(g, choices.map((c) => c.unit))];
     } else {
@@ -148,7 +150,7 @@ export function interactions(m) {
     }
     if (pick?.unit) {
       const after = R.playHeldPower(g, { unit: pick.unit });
-      out.selected = unitKey(R.getUnit(g, pick.unit));
+      out.selected = unitKey(g, R.getUnit(g, pick.unit));
       out.victims = changedToHome(g, after);
       out.chosen = R.getUnit(g, pick.unit).type;
       out.canConfirm = true;
@@ -162,11 +164,12 @@ export function interactions(m) {
 
 function describe(before, after, actor) {
   const events = [];
+  const asc = R.geometry(after.config).ascended;
   for (const player of R.PLAYERS) {
     const lost = changedToHome(before, after).filter((id) => R.getUnit(after, id).player === player);
     if (lost.length) events.push({ type: 'lost', player, count: lost.length });
     const ascended = after.units.filter(
-      (u) => u.player === player && u.pos === R.ASCENDED && R.getUnit(before, u.id).pos !== R.ASCENDED,
+      (u) => u.player === player && u.pos === asc && R.getUnit(before, u.id).pos !== asc,
     );
     if (ascended.length) events.push({ type: 'ascended', player, count: ascended.length });
   }
@@ -204,6 +207,9 @@ export function update(m, action) {
       return phase === 'draw' ? { game: R.drawCard(g), ui: freshUi(m.ui.viewer) } : m;
 
     case 'continue':
+      if (phase === 'jokerPass') {
+        return commit(m, R.passJoker(g), [{ type: 'turnLost', player: g.current }]);
+      }
       if (phase !== 'stuck') return m;
       return commit(m, R.playDrawnNumber(g, null), [{ type: 'turnLost', player: g.current }]);
 
@@ -274,7 +280,7 @@ function tap(m, key, phase, ix) {
     const choices = R.heldPowerChoices(g);
     if (m.ui.pick?.unit && ix.targets.includes(key)) {
       const choice = choices.find(
-        (c) => c.unit === m.ui.pick.unit && unitKey(R.getUnit(g, c.target)) === key,
+        (c) => c.unit === m.ui.pick.unit && unitKey(g, R.getUnit(g, c.target)) === key,
       );
       return commit(m, R.playHeldPower(g, choice), [
         { type: 'played', player: g.current, power: R.POWERS.LOVERS },

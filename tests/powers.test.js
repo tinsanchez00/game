@@ -130,8 +130,8 @@ test('Lovers cannot be played without a valid pair', () => {
 });
 
 test('Lovers: a locked commander cannot be moved', () => {
-  const g = playing(POWERS.LOVERS, { 'p0-c': 5, 'p0-s1': 11 }); // soldiers still home
-  assert.ok(!heldPowerChoices(g).some((c) => c.unit === 'p0-c'));
+  const g = playing(POWERS.LOVERS, { 'p0-c1': 5, 'p0-s1': 11 }); // soldiers still home
+  assert.ok(!heldPowerChoices(g).some((c) => c.unit === 'p0-c1'));
 });
 
 // --- The Devil ---
@@ -193,11 +193,11 @@ test('Tower: destroys every unit on every tower, both teams', () => {
 test('Hermit: every middle-lane stack loses one unit, commander first', () => {
   const g = playing(POWERS.HERMIT, {
     ...soldiersOut(0, [6, 10, 10, 1, 2]),
-    'p0-c': 6,
+    'p0-c1': 6,
     ...soldiersOut(1, [11, 11, 1, 2, 3]),
   });
   const after = playHeldPower(g);
-  assert.equal(pos(after, 'p0-c'), HOME);
+  assert.equal(pos(after, 'p0-c1'), HOME);
   assert.equal(pos(after, 'p0-s1'), 6);
   const atTen = ['p0-s2', 'p0-s3'].filter((id) => pos(after, id) === 10);
   assert.equal(atTen.length, 1);

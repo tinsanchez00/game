@@ -34,18 +34,18 @@ test('private lanes never collide', () => {
 test('commander is locked while any soldier is in the home field', () => {
   const g = gameWith({ ...soldiersOut(0, [1, 2, 3, 5]) }); // s5 still home
   assert.ok(isCommanderLocked(g, 0));
-  assert.ok(!has(legalMoves(g, 0, 2), 'p0-c'));
+  assert.ok(!has(legalMoves(g, 0, 2), 'p0-c1'));
 });
 
 test('commander can move once no soldiers are home', () => {
   const g = gameWith(soldiersOut(0));
   assert.ok(!isCommanderLocked(g, 0));
-  assert.ok(has(legalMoves(g, 0, 4), 'p0-c'));
+  assert.ok(has(legalMoves(g, 0, 4), 'p0-c1'));
 });
 
 test('a captured commander back home is not locked by that alone', () => {
-  const g = gameWith({ ...soldiersOut(0), 'p0-c': HOME });
-  assert.ok(has(legalMoves(g, 0, 1), 'p0-c'));
+  const g = gameWith({ ...soldiersOut(0), 'p0-c1': HOME });
+  assert.ok(has(legalMoves(g, 0, 1), 'p0-c1'));
 });
 
 test('ascended soldiers do not lock the commander', () => {
@@ -70,31 +70,31 @@ test('a move onto a cell already holding two of your units is invalid', () => {
 // --- escort ---
 
 test('commander can bring a soldier from its own cell along', () => {
-  const g = gameWith({ ...soldiersOut(0, [6, 1, 2, 3, 5]), 'p0-c': 6 });
-  assert.ok(has(legalMoves(g, 0, 2), 'p0-c', 'p0-s1'));
-  const after = applyMove(g, { unit: 'p0-c', escort: 'p0-s1' }, 2);
-  assert.equal(pos(after, 'p0-c'), 8);
+  const g = gameWith({ ...soldiersOut(0, [6, 1, 2, 3, 5]), 'p0-c1': 6 });
+  assert.ok(has(legalMoves(g, 0, 2), 'p0-c1', 'p0-s1'));
+  const after = applyMove(g, { unit: 'p0-c1', escort: 'p0-s1' }, 2);
+  assert.equal(pos(after, 'p0-c1'), 8);
   assert.equal(pos(after, 'p0-s1'), 8);
 });
 
 test('commander can also move without its escort', () => {
-  const g = gameWith({ ...soldiersOut(0, [6, 1, 2, 3, 5]), 'p0-c': 6 });
-  const after = applyMove(g, { unit: 'p0-c' }, 2);
-  assert.equal(pos(after, 'p0-c'), 8);
+  const g = gameWith({ ...soldiersOut(0, [6, 1, 2, 3, 5]), 'p0-c1': 6 });
+  const after = applyMove(g, { unit: 'p0-c1' }, 2);
+  assert.equal(pos(after, 'p0-c1'), 8);
   assert.equal(pos(after, 'p0-s1'), 6);
 });
 
 test('soldiers on other cells cannot escort', () => {
-  const g = gameWith({ ...soldiersOut(0, [7, 1, 2, 3, 5]), 'p0-c': 6 });
+  const g = gameWith({ ...soldiersOut(0, [7, 1, 2, 3, 5]), 'p0-c1': 6 });
   assert.ok(!legalMoves(g, 0, 2).some((m) => m.escort));
 });
 
 test('with one of your units at the destination, commander or soldier may go, not both', () => {
-  const g = gameWith({ ...soldiersOut(0, [6, 9, 2, 3, 5]), 'p0-c': 6 });
+  const g = gameWith({ ...soldiersOut(0, [6, 9, 2, 3, 5]), 'p0-c1': 6 });
   const moves = legalMoves(g, 0, 3);
-  assert.ok(has(moves, 'p0-c'));
+  assert.ok(has(moves, 'p0-c1'));
   assert.ok(has(moves, 'p0-s1'));
-  assert.ok(!has(moves, 'p0-c', 'p0-s1'));
+  assert.ok(!has(moves, 'p0-c1', 'p0-s1'));
 });
 
 // --- capturing ---
@@ -102,12 +102,12 @@ test('with one of your units at the destination, commander or soldier may go, no
 test('landing on enemy units removes all of them, commander included', () => {
   const g = gameWith({
     'p0-s1': 3,
-    ...soldiersOut(1, [6, 1, 2, 3, 5]), 'p1-c': 6,
+    ...soldiersOut(1, [6, 1, 2, 3, 5]), 'p1-c1': 6,
   });
   const after = applyMove(g, { unit: 'p0-s1' }, 3);
   assert.equal(pos(after, 'p0-s1'), 6);
   assert.equal(pos(after, 'p1-s1'), HOME);
-  assert.equal(pos(after, 'p1-c'), HOME);
+  assert.equal(pos(after, 'p1-c1'), HOME);
 });
 
 test('capturing a soldier locks the opponent commander again', () => {
@@ -159,18 +159,18 @@ test('ascended units cannot move', () => {
 });
 
 test('an escorted soldier ascends with the commander', () => {
-  const g = gameWith({ ...soldiersOut(0, [13, 1, 2, 3, 5]), 'p0-c': 13 });
-  const after = applyMove(g, { unit: 'p0-c', escort: 'p0-s1' }, 2);
-  assert.equal(pos(after, 'p0-c'), ASCENDED);
+  const g = gameWith({ ...soldiersOut(0, [13, 1, 2, 3, 5]), 'p0-c1': 13 });
+  const after = applyMove(g, { unit: 'p0-c1', escort: 'p0-s1' }, 2);
+  assert.equal(pos(after, 'p0-c1'), ASCENDED);
   assert.equal(pos(after, 'p0-s1'), ASCENDED);
 });
 
 test('ascending all six units wins the game', () => {
   const g = gameWith({
     ...soldiersOut(0, [ASCENDED, ASCENDED, ASCENDED, ASCENDED, ASCENDED]),
-    'p0-c': 14,
+    'p0-c1': 14,
   });
-  const after = applyMove(g, { unit: 'p0-c' }, 1);
+  const after = applyMove(g, { unit: 'p0-c1' }, 1);
   assert.equal(after.winner, 0);
   assert.throws(() => playNumberCard(after, 1, null));
 });
@@ -185,13 +185,13 @@ test('the turn passes to the other player after a move', () => {
 test('with no valid move the turn is lost', () => {
   const g = gameWith({
     ...soldiersOut(0, [ASCENDED, ASCENDED, ASCENDED, ASCENDED, ASCENDED]),
-    'p0-c': 14,
+    'p0-c1': 14,
   });
   assert.equal(legalMoves(g, 0, 3).length, 0);
   const after = playNumberCard(g, 3, null);
   assert.equal(after.current, 1);
-  assert.equal(pos(after, 'p0-c'), 14);
-  assert.throws(() => playNumberCard(g, 3, { unit: 'p0-c' }));
+  assert.equal(pos(after, 'p0-c1'), 14);
+  assert.throws(() => playNumberCard(g, 3, { unit: 'p0-c1' }));
 });
 
 test('you must move when a valid move exists', () => {
@@ -200,6 +200,6 @@ test('you must move when a valid move exists', () => {
 
 test('illegal moves are rejected', () => {
   const g = gameWith();
-  assert.throws(() => applyMove(g, { unit: 'p0-c' }, 2)); // locked
+  assert.throws(() => applyMove(g, { unit: 'p0-c1' }, 2)); // locked
   assert.throws(() => applyMove(g, { unit: 'p1-s1' }, 2)); // not your turn
 });

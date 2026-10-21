@@ -1,28 +1,31 @@
 // Power effects. Each effect takes a state and returns new units (and flags);
 // turn bookkeeping lives in turn.js.
 
-import { HOME, cellId, isOnBoard, isTower, middleIndex, posFromMiddleIndex } from './board.js';
+import { HOME, geometry } from './board.js';
 import { POWERS } from './cards.js';
-import { isCommanderLocked, sendHome, unitsOnCell } from './moves.js';
+import { isCommanderLocked, sendHome } from './moves.js';
 import { getUnit } from './state.js';
 
 function middleUnits(state, player = null) {
+  const g = geometry(state.config);
   return state.units.filter(
-    (u) => middleIndex(u.pos) !== null && (player === null || u.player === player),
+    (u) => g.isShared(u.pos) && (player === null || u.player === player),
   );
 }
 
 // --- choices -------------------------------------------------------------
 
 function loversChoices(state, player) {
+  if (state.config.maxPerCell < 2) return [];
   const mine = middleUnits(state, player);
+  const all = middleUnits(state);
   const locked = isCommanderLocked(state, player);
   const choices = [];
   for (const unit of mine) {
     if (unit.type === 'commander' && locked) continue;
     for (const partner of mine) {
       if (partner.pos === unit.pos) continue;
-      if (unitsOnCell(state, cellId(player, partner.pos)).length !== 1) continue;
+      if (all.filter((u) => u.pos === partner.pos).length !== 1) continue;
       choices.push({ unit: unit.id, target: partner.id });
     }
   }
@@ -68,33 +71,33 @@ function lovers(state, { unit, target }) {
 }
 
 function devil(state, { unit }) {
-  const center = middleIndex(getUnit(state, unit).pos);
+  const g = geometry(state.config);
+  const center = g.middleIndex(getUnit(state, unit).pos);
   const units = state.units.map((u) => {
     if (u.id === unit) return u;
-    const i = middleIndex(u.pos);
+    const i = g.middleIndex(u.pos);
     if (i === null) return u;
     if (i === center) return { ...u, pos: HOME };
     const next = i + Math.sign(center - i);
     if (next === center) return { ...u, pos: HOME };
-    return { ...u, pos: posFromMiddleIndex(next) };
+    return { ...u, pos: g.posFromMiddleIndex(next) };
   });
   return { ...state, units };
 }
 
 function tower(state) {
-  return {
-    ...state,
-    units: sendHome(state.units, (u) => isOnBoard(u.pos) && isTower(u.pos)),
-  };
+  const g = geometry(state.config);
+  return { ...state, units: sendHome(state.units, (u) => g.isTower(u.pos)) };
 }
 
 function hermit(state) {
+  const g = geometry(state.config);
+  const protect = state.config.rules.towersProtect;
   const victims = new Set();
   const byCell = new Map();
   for (const u of middleUnits(state)) {
-    if (isTower(u.pos)) continue;
-    const key = middleIndex(u.pos);
-    byCell.set(key, [...(byCell.get(key) ?? []), u]);
+    if (protect && g.isTower(u.pos)) continue;
+    byCell.set(u.pos, [...(byCell.get(u.pos) ?? []), u]);
   }
   for (const stack of byCell.values()) {
     if (stack.length < 2) continue;

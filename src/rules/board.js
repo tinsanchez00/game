@@ -1,48 +1,96 @@
-// Board geometry. Each player's units travel along their own numbered path:
-//   0            home field (off the board)
-//   1..14        cells on the board
-//   15           ascended (off the board)
-// Positions 5..12 (the middle lane) map to the same physical cells for both
-// players, in the same direction; the rest are private to each player.
+// Board geometry, derived from a game's settings. Each player's units travel
+// along their own numbered path:
+//   0                    home field (off the board)
+//   1 .. startLane       private start lane
+//   next middleLane      shared lane: the same physical cells for both players,
+//                        travelled in the same direction
+//   next endLane         private end lane
+//   pathLength + 1       ascended (off the board)
+//
+// geometry(config) is cached per config object.
+
+import { DEFAULT_CONFIG, pathLengthOf } from './config.js';
 
 export const HOME = 0;
-export const PATH_LENGTH = 14;
-export const ASCENDED = PATH_LENGTH + 1;
 
-const START_LANE_LAST = 4;
-const MIDDLE_LANE_LAST = 12;
-export const MIDDLE_LANE_LENGTH = MIDDLE_LANE_LAST - START_LANE_LAST;
+const cache = new WeakMap();
 
-export const TOWER_POSITIONS = Object.freeze([4, 8, 14]);
-
-export function isOnBoard(pos) {
-  return pos >= 1 && pos <= PATH_LENGTH;
+export function geometry(config) {
+  let g = cache.get(config);
+  if (!g) {
+    g = buildGeometry(config.board);
+    cache.set(config, g);
+  }
+  return g;
 }
 
-export function isShared(pos) {
-  return pos > START_LANE_LAST && pos <= MIDDLE_LANE_LAST;
+function buildGeometry(board) {
+  const { startLane, middleLane, endLane } = board;
+  const pathLength = pathLengthOf(board);
+  const ascended = pathLength + 1;
+  const middleFirst = startLane + 1;
+  const middleLast = startLane + middleLane;
+  const towerSet = new Set(board.towers);
+
+  // Physical cells: player 0 private, player 1 private, then shared.
+  const privateCount = startLane + endLane;
+  const cellCount = 2 * privateCount + middleLane;
+  const cellIndexTable = [[], []];
+  const cellIdTable = [[], []];
+  const towerTable = [];
+  for (let pos = 0; pos <= ascended; pos += 1) {
+    towerTable[pos] = pos >= 1 && pos <= pathLength && towerSet.has(pos);
+    for (const player of [0, 1]) {
+      let index = -1;
+      let id = null;
+      if (pos >= middleFirst && pos <= middleLast) {
+        index = 2 * privateCount + (pos - middleFirst);
+        id = `shared-${pos - startLane}`;
+      } else if (pos >= 1 && pos <= pathLength) {
+        const k = pos < middleFirst ? pos - 1 : pos - middleLane - 1;
+        index = player * privateCount + k;
+        id = `p${player}-${pos}`;
+      }
+      cellIndexTable[player][pos] = index;
+      cellIdTable[player][pos] = id;
+    }
+  }
+
+  return Object.freeze({
+    startLane,
+    middleLane,
+    endLane,
+    pathLength,
+    ascended,
+    middleFirst,
+    middleLast,
+    cellCount,
+    towers: Object.freeze([...board.towers]),
+    isOnBoard: (pos) => pos >= 1 && pos <= pathLength,
+    isShared: (pos) => pos >= middleFirst && pos <= middleLast,
+    isTower: (pos) => towerTable[pos] === true,
+    /** 1-based index along the middle lane, or null outside it. */
+    middleIndex: (pos) => (pos >= middleFirst && pos <= middleLast ? pos - startLane : null),
+    /** Path position of a middle-lane index (same for both players). */
+    posFromMiddleIndex: (index) => index + startLane,
+    /** Integer id of the physical cell, or -1 when off the board. */
+    cellIndex: (player, pos) => cellIndexTable[player][pos] ?? -1,
+    /** String id of the physical cell, or null when off the board. */
+    cellId: (player, pos) => cellIdTable[player][pos] ?? null,
+  });
 }
 
-export function isTower(pos) {
-  return TOWER_POSITIONS.includes(pos);
-}
+// --- the default board, for code and tests that don't carry a config ------
 
-/** 1-based index along the middle lane, or null outside it. */
-export function middleIndex(pos) {
-  return isShared(pos) ? pos - START_LANE_LAST : null;
-}
+const D = geometry(DEFAULT_CONFIG);
 
-/** Path position of a middle-lane index (same for both players). */
-export function posFromMiddleIndex(index) {
-  return index + START_LANE_LAST;
-}
-
-/**
- * Physical cell id for a player's path position, or null when the position is
- * off the board. Shared cells get the same id for both players.
- */
-export function cellId(player, pos) {
-  if (!isOnBoard(pos)) return null;
-  if (isShared(pos)) return `shared-${middleIndex(pos)}`;
-  return `p${player}-${pos}`;
-}
+export const PATH_LENGTH = D.pathLength;
+export const ASCENDED = D.ascended;
+export const MIDDLE_LANE_LENGTH = D.middleLane;
+export const TOWER_POSITIONS = D.towers;
+export const isOnBoard = D.isOnBoard;
+export const isShared = D.isShared;
+export const isTower = D.isTower;
+export const middleIndex = D.middleIndex;
+export const posFromMiddleIndex = D.posFromMiddleIndex;
+export const cellId = D.cellId;

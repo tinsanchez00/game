@@ -5,12 +5,12 @@ import { createGame } from '../rules/index.js';
 import { initModel, update } from './controller.js';
 import { view } from './view.js';
 
-const STORE_KEY = 'board-game-test-v1';
+const STORE_KEY = 'board-game-test-v2';
 
 function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null');
-    if (saved?.game?.units?.length === 12 && 'hangedDraw' in saved.game && saved.ui) return saved;
+    if (saved?.game?.config && saved.ui) return saved;
   } catch {
     // Unreadable or blocked storage: start fresh.
   }

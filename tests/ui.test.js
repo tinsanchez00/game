@@ -133,7 +133,7 @@ test('selecting a unit previews its destination and any capture', () => {
     moveDecks: [{ draw: [3], discard: [] }, { draw: [1], discard: [] }],
   });
   m = update(m, { type: 'draw' });
-  m = update(m, { type: 'tap', key: unitKey(R.getUnit(m.game, 'p0-s1')) });
+  m = update(m, { type: 'tap', key: unitKey(m.game, R.getUnit(m.game, 'p0-s1')) });
   const ix = interactions(m);
   assert.equal(ix.dest, 'shared-2');
   assert.deepEqual(ix.victims, ['p1-s1']);
@@ -145,7 +145,7 @@ test('selecting a unit previews its destination and any capture', () => {
 
 test('a commander with an escort offers both options', () => {
   const soldiers = { 'p0-s1': 6, 'p0-s2': 1, 'p0-s3': 2, 'p0-s4': 3, 'p0-s5': 5 };
-  let m = modelWith({ ...soldiers, 'p0-c': 6 }, {
+  let m = modelWith({ ...soldiers, 'p0-c1': 6 }, {
     moveDecks: [{ draw: [2], discard: [] }, { draw: [1], discard: [] }],
   });
   m = update(m, { type: 'draw' });
@@ -154,7 +154,7 @@ test('a commander with an escort offers both options', () => {
   assert.deepEqual(ix.options.sort(), ['commander', 'commander+escort', 'soldier']);
   m = update(m, { type: 'option', value: 'commander+escort' });
   m = update(m, { type: 'confirm' });
-  assert.equal(R.getUnit(m.game, 'p0-c').pos, 8);
+  assert.equal(R.getUnit(m.game, 'p0-c1').pos, 8);
   assert.equal(R.getUnit(m.game, 'p0-s1').pos, 8);
 });
 

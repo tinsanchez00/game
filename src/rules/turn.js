@@ -4,13 +4,15 @@
 //   number card: currentMoves(state), then playDrawnNumber(state, move | null)
 //   joker:       draftOptions(state), then playDraft(state, keepIndex)
 //            or  heldPowerChoices(state), then playHeldPower(state, args)
+//            or, when neither is possible (always so with powers off),
+//                passJoker(state)
 //
 // Playing the Hanged Man draws again at once and sets state.hangedDraw; that
 // card is then resolved through the same functions (a number card moves a
 // unit backward, a joker can only draft), after which the same player takes
 // another turn.
 
-import { JOKER, MOVE_DECK, POWERS, isNumberCard } from './cards.js';
+import { JOKER, POWERS, isNumberCard } from './cards.js';
 import { endTurn, legalMoves, playNumberCard } from './moves.js';
 import { applyPower, powerChoices } from './powers.js';
 import { shuffle } from './random.js';
@@ -32,7 +34,7 @@ export function drawCard(state) {
   let { rng } = state;
   let { draw, discard } = state.moveDecks[player];
   if (draw.length === 0) {
-    const s = shuffle(MOVE_DECK, rng);
+    const s = shuffle(state.config.moveDeck, rng);
     rng = s.rng;
     draw = s.items;
     discard = [];
@@ -63,7 +65,12 @@ export function playDrawnNumber(state, move = null) {
 
 export function draftOptions(state) {
   assertJoker(state, 'draftOptions');
+  if (!state.config.powers) return [];
   return state.powerDeck.slice(0, 2);
+}
+
+export function canDraft(state) {
+  return draftOptions(state).length > 0;
 }
 
 /** Keeps draftOptions(state)[keepIndex]; the rest go to the bottom. */
@@ -91,7 +98,7 @@ export function playDraft(state, keepIndex) {
 
 export function heldPowerChoices(state) {
   assertJoker(state, 'heldPowerChoices');
-  if (state.hangedDraw) return [];
+  if (!state.config.powers || state.hangedDraw) return [];
   const power = state.held[state.current];
   if (!power) return [];
   return powerChoices(state, state.current, power);
@@ -101,8 +108,23 @@ export function canPlayHeldPower(state) {
   return heldPowerChoices(state).length > 0;
 }
 
+/** True when the drawn joker allows neither drafting nor playing a power. */
+export function mustPassJoker(state) {
+  assertJoker(state, 'mustPassJoker');
+  return !canDraft(state) && !canPlayHeldPower(state);
+}
+
+/** Resolves a joker that can do nothing: the turn ends without a move. */
+export function passJoker(state) {
+  if (!mustPassJoker(state)) {
+    throw new Error('passJoker: this joker can draft or play a power');
+  }
+  return endTurn(state);
+}
+
 export function playHeldPower(state, args = {}) {
   assertJoker(state, 'playHeldPower');
+  if (!state.config.powers) throw new Error('playHeldPower: powers are turned off');
   if (state.hangedDraw) {
     throw new Error('playHeldPower: a joker drawn by the Hanged Man can only draft');
   }
