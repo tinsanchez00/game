@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as R from '../src/rules/index.js';
 import { apply, buildFast, genMoves, undo } from '../sim/fast.js';
+import { applyPower, powerTargets, undoPower } from '../sim/fastpowers.js';
+import { powerBot } from '../sim/powerbot.js';
 import { greedyBot, randomBot, searchBot } from '../sim/bot.js';
 import { playGame } from '../sim/game.js';
 
@@ -117,6 +119,113 @@ test('the search bot beats a random bot', () => {
   assert.ok(wins >= 34, `won ${wins}/${games}`);
 });
 
-test('simulations refuse powers for now', () => {
-  assert.throws(() => playGame({ config: {}, seed: 1, bots: [greedyBot(), greedyBot()] }), /powers/);
+// --- powers -----------------------------------------------------------------
+
+const POWER_CONFIGS = [
+  {},
+  { powerTiming: 'beforeDraw' },
+  { soldiers: 4, rules: { towersProtect: false } },
+  { maxPerCell: 3, commanders: 2, soldiers: 3 },
+];
+
+const targetKey = (s, args) => JSON.stringify(Object.keys(args).sort().map((k) => {
+  const u = R.getUnit(s, args[k]);
+  return [k, u.pos, u.type];
+}));
+
+test('fast power targets and effects match the engine on random positions', () => {
+  const random = rng(789);
+  let checked = 0;
+  for (const config of POWER_CONFIGS) {
+    for (let n = 0; n < 120; n += 1) {
+      const s0 = randomPosition({ ...config, powers: false }, random);
+      if (s0.winner !== null) continue;
+      const s = { ...s0, config: R.makeConfig({ ...config, powers: true }) };
+      for (const id of R.POWER_IDS) {
+        const fs = buildFast(s);
+        const k = R.POWER_IDS.indexOf(id);
+        fs.held[s.current] = k;
+        const engineChoices = R.powerChoices(s, s.current, id);
+        const fastTargets = powerTargets(fs, s.current, k);
+        const toArgs = (t) => (t.length === 2 ? { unit: fs.ids[t[0]], target: fs.ids[t[1]] }
+          : t.length === 1 ? { unit: fs.ids[t[0]] } : {});
+        const want = new Set((engineChoices.length ? engineChoices : [{}]).map((c) => targetKey(s, c)));
+        const got = new Set(fastTargets.map((t) => targetKey(s, toArgs(t))));
+        assert.deepEqual([...got].sort(), [...want].sort(), `${id} targets`);
+        for (const t of fastTargets) {
+          const before = [...fs.pos];
+          const after = R.applyPower(s, s.current, id, toArgs(t));
+          const rec = applyPower(fs, s.current, k, t);
+          assert.deepEqual([...fs.pos], after.units.map((u) => u.pos), `${id} effect`);
+          undoPower(fs, rec);
+          assert.deepEqual([...fs.pos], before);
+          checked += 1;
+        }
+      }
+    }
+  }
+  assert.ok(checked > 1000, `checked ${checked}`);
+});
+
+test('fast backward moves match the engine', () => {
+  const random = rng(321);
+  let checked = 0;
+  for (let n = 0; n < 300; n += 1) {
+    const s0 = randomPosition({ powers: false }, random);
+    if (s0.winner !== null) continue;
+    const s = { ...s0, hangedDraw: true };
+    const fs = buildFast(s);
+    for (const d of fs.values) {
+      const engine = new Set(R.legalMoves(s, s.current, d).map((m) => key(s, m)));
+      const fast = genMoves(fs, s.current, d, true);
+      assert.deepEqual(new Set(fast.map(([u, e]) => key(s, e >= 0 ? { unit: fs.ids[u], escort: fs.ids[e] } : { unit: fs.ids[u] }))), engine);
+      for (const [u, e] of fast) {
+        const move = e >= 0 ? { unit: fs.ids[u], escort: fs.ids[e] } : { unit: fs.ids[u] };
+        const after = R.applyMove(s, move, d);
+        const rec = apply(fs, u, e, d, true);
+        assert.deepEqual([...fs.pos], after.units.map((x) => x.pos));
+        assert.equal(fs.current, after.current);
+        undo(fs, rec);
+        checked += 1;
+      }
+    }
+  }
+  assert.ok(checked > 300);
+});
+
+test('power bots finish games at both levels and both timings, using every power', () => {
+  const used = new Set();
+  for (const level of ['strong', 'average']) {
+    for (const powerTiming of ['afterDraw', 'beforeDraw']) {
+      for (const seed of [1, 2, 3]) {
+        const r = playGame({
+          config: { powerTiming, soldiers: 4 },
+          seed,
+          bots: [powerBot({ level, random: rng(seed) }), powerBot({ level, random: rng(seed + 9) })],
+        });
+        assert.ok(r.finished, `${level} ${powerTiming} ${seed}`);
+        for (const [id, st] of Object.entries(r.powers)) if (st.used) used.add(id);
+        assert.equal(r.loserAscended + r.loserLeft, 5);
+      }
+    }
+  }
+  assert.equal(used.size, R.POWER_IDS.length, [...used].join());
+});
+
+test('the strong power bot beats the average one', () => {
+  let wins = 0;
+  const games = 40;
+  for (let seed = 1; seed <= games; seed += 1) {
+    const me = seed % 2;
+    const bots = [];
+    bots[me] = powerBot({ level: 'strong' });
+    bots[1 - me] = powerBot({ level: 'average', random: rng(seed) });
+    if (playGame({ config: { soldiers: 4 }, seed, bots }).winner === me) wins += 1;
+  }
+  assert.ok(wins >= 24, `won ${wins}/${games}`);
+});
+
+test('power games are reproducible from the seed', () => {
+  const run = () => playGame({ config: {}, seed: 11, bots: [powerBot({ level: 'average', random: rng(5) }), powerBot({ level: 'strong' })] });
+  assert.deepEqual(run(), run());
 });

@@ -71,7 +71,43 @@ export function summarize(records, { teamSize, histWidth = 10 } = {}) {
     leaderAtHalfWins: rate(half.filter((r) => r.leaderAtHalfWon).length, half.length),
     leaderAt75Wins: rate(late.filter((r) => r.leaderAt75Won).length, late.length),
     commanderFirstMoveTurn: describe(cmd),
+    ...powerSummary(done, teamSize),
     shortest: byTurns.slice(0, 3).map((r) => ({ seed: r.seed, turns: r.turns, loserLeft: r.loserLeft })),
     longest: byTurns.slice(-3).reverse().map((r) => ({ seed: r.seed, turns: r.turns, loserLeft: r.loserLeft })),
+  };
+}
+
+/** Ascension gaps and per-power effects (fields present on game.js records). */
+function powerSummary(done, teamSize) {
+  if (!done.length || done[0].loserAscended === undefined) return {};
+  const n = done.length;
+  const sum = (f) => done.reduce((a, r) => a + f(r), 0);
+  const loserAscended = new Array(teamSize).fill(0);
+  for (const r of done) loserAscended[r.loserAscended] += 1;
+  const usedMore = done.filter((r) => r.winnerUsedMore !== null && r.winnerUsedMore !== undefined);
+  const perPower = {};
+  for (const id of Object.keys(done[0].powers ?? {})) {
+    const t = (f) => sum((r) => f(r.powers[id]));
+    const used = t((x) => x.used);
+    perPower[id] = {
+      draftedPerGame: t((x) => x.drafted) / n,
+      usedPerGame: used / n,
+      noEffectShare: used ? t((x) => x.noEffect) / used : null,
+      enemyKilledPerUse: used ? t((x) => x.enemyKilled) / used : null,
+      ownKilledPerUse: used ? t((x) => x.ownKilled) / used : null,
+      enemyProgressLostPerUse: used ? t((x) => x.enemyProgressLost) / used : null,
+      ownProgressLostPerUse: used ? t((x) => x.ownProgressLost) / used : null,
+      swingPerUse: used ? t((x) => x.swing) / used : null,
+    };
+  }
+  return {
+    loserAscended: { mean: sum((r) => r.loserAscended) / n, counts: loserAscended },
+    ascendedGap: describe(done.map((r) => teamSize - r.loserAscended)),
+    blowouts: rate(done.filter((r) => r.loserAscended <= 1).length, n),
+    shutouts: rate(done.filter((r) => r.loserAscended === 0).length, n),
+    powerKills: describe(done.map((r) => r.powerKills[0] + r.powerKills[1])),
+    powersUsed: describe(done.map((r) => r.powersUsed[0] + r.powersUsed[1])),
+    winnerUsedMorePowers: rate(usedMore.filter((r) => r.winnerUsedMore).length, usedMore.length),
+    perPower,
   };
 }

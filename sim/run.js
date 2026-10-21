@@ -2,9 +2,11 @@
 //
 // Usage: node sim/run.js <scenarios.mjs> <out.json> [--games N] [--depth D]
 //                        [--weights '{"tower":2}'] [--only id1,id2]
+//                        [--bot '{"kind":"power","level":"strong"}']
 //
-// <scenarios.mjs> default-exports [{ id, label, group?, config }, ...].
-// Every scenario plays the same seeds (1..N) with the same bot on both sides.
+// <scenarios.mjs> default-exports [{ id, label, group?, meta?, bot?, config }].
+// Every scenario plays the same seeds (1..N) with the same bot on both sides:
+// the scenario's own `bot`, else --bot, else a search bot of --depth.
 
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -31,19 +33,21 @@ const only = arg('only', null)?.split(',');
 
 const { default: all } = await import(pathToFileURL(resolve(scenarioPath)).href);
 const scenarios = only ? all.filter((s) => only.includes(s.id)) : all;
-const bot = { kind: 'search', depth, weights };
+const defaultBot = arg('bot', null) ? JSON.parse(arg('bot')) : { kind: 'search', depth, weights };
 
 const results = [];
 const started = Date.now();
 for (const sc of scenarios) {
   const config = makeConfig(sc.config);
   const t0 = Date.now();
-  const parts = await runJobs(chunk(seedRange(1, games), 100).map((seeds) => ({
+  const bot = sc.bot ?? defaultBot;
+  const size = bot.kind === 'power' && bot.level !== 'average' ? 10 : 50;
+  const parts = await runJobs(chunk(seedRange(1, games), size).map((seeds) => ({
     type: 'games', config, bots: [bot, bot], seeds, maxTurns: 5000,
   })));
   const records = parts.flat();
   const summary = summarize(records, { teamSize: teamSize(config) });
-  results.push({ id: sc.id, label: sc.label, group: sc.group ?? null, config, summary });
+  results.push({ id: sc.id, label: sc.label, group: sc.group ?? null, meta: sc.meta ?? null, bot, config, summary });
   const t = summary.turns;
   console.log(`${sc.id.padEnd(22)} mean ${t.mean.toFixed(1).padStart(6)}  median ${String(t.median).padStart(5)}  `
     + `min ${String(t.min).padStart(4)}  max ${String(t.max).padStart(5)}  first ${(100 * summary.firstPlayerWins.rate).toFixed(1)}%  `
@@ -53,7 +57,7 @@ for (const sc of scenarios) {
 writeFileSync(outPath, JSON.stringify({
   generated: new Date().toISOString(),
   gamesPerScenario: games,
-  bot,
+  bot: defaultBot,
   seconds: Math.round((Date.now() - started) / 1000),
   results,
 }, null, 1));

@@ -28,7 +28,7 @@ export const DEFAULT_WEIGHTS = Object.freeze({
   remote: 0.4, // same, for the side to move's own exposed units
 });
 
-const WIN = 1e6;
+export const WIN = 1e6;
 
 // --- evaluation ------------------------------------------------------------
 
@@ -88,7 +88,7 @@ function sideScore(fs, p, w, endOdds) {
 }
 
 /** Share of the deck that overshoots ascension from each cell (exact rule). */
-function endWaitTable(fs) {
+export function endWaitTable(fs) {
   const t = new Float64Array(fs.A + 1);
   if (!fs.exact) return t;
   for (let q = 1; q < fs.A; q += 1) {

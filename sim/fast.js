@@ -3,9 +3,10 @@
 // Real games are always played through src/rules; this module only lets a
 // bot try moves and undo them quickly. tests/sim.test.js checks that its
 // move generation and move results match the engine on random positions.
-// Supports number-card moves going forward (no powers).
+// Supports number-card moves (forward, or backward for the Hanged Man) and,
+// in fastpowers.js, the power effects.
 
-import { HOME, JOKER, geometry, otherPlayer } from '../src/rules/index.js';
+import { HOME, JOKER, POWER_IDS, geometry, otherPlayer } from '../src/rules/index.js';
 
 export function buildFast(state) {
   const config = state.config;
@@ -55,7 +56,17 @@ export function buildFast(state) {
     fullTotal: config.moveDeck.length,
     counts: [new Int16Array(J + 1), new Int16Array(J + 1)],
     totals: [0, 0],
+    middleFirst: g.middleFirst,
+    middleLast: g.middleLast,
+    // Powers: held[p] is an index into POWER_IDS or -1; the power deck is
+    // known by composition only.
+    powersOn: config.powers,
+    beforeDraw: config.powerTiming === 'beforeDraw',
+    held: state.held.map((h) => (h ? POWER_IDS.indexOf(h) : -1)),
+    pdCounts: new Int16Array(POWER_IDS.length),
+    pdTotal: state.powerDeck.length,
   };
+  for (const id of state.powerDeck) fs.pdCounts[POWER_IDS.indexOf(id)] += 1;
 
   state.units.forEach((u, i) => {
     fs.pos[i] = u.pos;
@@ -79,17 +90,18 @@ export function isLocked(fs, p) {
   return fs.lockRule && fs.soldiersHome[p] > 0;
 }
 
-/** Destination for unit i moving d forward, or -1 if it can't. */
-function dest(fs, i, d) {
+/** Destination for unit i moving d (backward when `back`), or -1 if it can't. */
+function dest(fs, i, d, back = false) {
   const from = fs.pos[i];
   if (from === fs.A) return -1;
+  if (back) return from === HOME ? -1 : Math.max(HOME, from - d);
   const t = from + d;
   if (t <= fs.A) return t;
   return fs.exact ? -1 : fs.A;
 }
 
 function canLand(fs, p, t, count) {
-  if (t === fs.A) return true;
+  if (t === fs.A || t === HOME) return true;
   const c = fs.cellIdx[p][t];
   if (fs.occ[1 - p][c] > 0 && fs.protect && fs.tower[t]) return false;
   return fs.occ[p][c] + count <= fs.maxPerCell;
@@ -100,14 +112,14 @@ function canLand(fs, p, t, count) {
  * pairs (escort -1 = none). Units of the same type on the same cell are
  * interchangeable, so only one of them is listed.
  */
-export function genMoves(fs, p, d) {
+export function genMoves(fs, p, d, back = false) {
   const out = [];
   const seen = new Set();
   const locked = isLocked(fs, p);
   for (let i = 0; i < fs.n; i += 1) {
     if (fs.owner[i] !== p) continue;
     if (fs.cmd[i] && locked) continue;
-    const t = dest(fs, i, d);
+    const t = dest(fs, i, d, back);
     if (t < 0) continue;
     const from = fs.pos[i];
     const key = from * 4 + fs.cmd[i] * 2;
@@ -115,7 +127,7 @@ export function genMoves(fs, p, d) {
       seen.add(key);
       out.push([i, -1]);
     }
-    if (fs.escort && fs.cmd[i] && from !== HOME && !seen.has(key + 1) && canLand(fs, p, t, 2)) {
+    if (fs.escort && fs.cmd[i] && from !== HOME && from !== fs.A && !seen.has(key + 1) && canLand(fs, p, t, 2)) {
       for (let j = 0; j < fs.n; j += 1) {
         if (fs.owner[j] === p && !fs.cmd[j] && fs.pos[j] === from) {
           seen.add(key + 1);
@@ -128,7 +140,7 @@ export function genMoves(fs, p, d) {
   return out;
 }
 
-function lift(fs, i) {
+export function lift(fs, i) {
   const p = fs.owner[i];
   const from = fs.pos[i];
   const c = fs.cellIdx[p][from];
@@ -137,7 +149,7 @@ function lift(fs, i) {
   if (from === fs.A) fs.remaining[p] += 1;
 }
 
-function place(fs, i, t) {
+export function place(fs, i, t) {
   const p = fs.owner[i];
   fs.pos[i] = t;
   const c = fs.cellIdx[p][t];
@@ -150,11 +162,11 @@ function place(fs, i, t) {
  * Applies move [u, e] for the side to move with a card worth d. Returns an
  * undo record; record.won is true when the mover has finished.
  */
-export function apply(fs, u, e, d) {
+export function apply(fs, u, e, d, back = false) {
   const p = fs.owner[u];
   const o = 1 - p;
   const from = fs.pos[u];
-  const t = dest(fs, u, d);
+  const t = dest(fs, u, d, back);
   const captured = [];
   lift(fs, u);
   place(fs, u, t);
@@ -173,7 +185,9 @@ export function apply(fs, u, e, d) {
     }
   }
   const prevCurrent = fs.current;
-  fs.current = fs.towerTurn && fs.tower[t] ? p : o;
+  // A backward (Hanged Man) move is followed by another turn, as is landing
+  // on a tower with the extra-turn rule.
+  fs.current = back || (fs.towerTurn && fs.tower[t]) ? p : o;
   return { u, e, from, captured, prevCurrent, won: fs.remaining[p] === 0 };
 }
 

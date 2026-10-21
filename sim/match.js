@@ -13,8 +13,8 @@ export function playMatch({ config, makeA, makeB, seeds }) {
   for (const seed of seeds) {
     for (const aSeat of [0, 1]) {
       const bots = [];
-      bots[aSeat] = makeA();
-      bots[1 - aSeat] = makeB();
+      bots[aSeat] = makeA(seed * 2 + aSeat);
+      bots[1 - aSeat] = makeB(seed * 2 + 1 - aSeat);
       const r = playGame({ config, seed, bots });
       if (!r.finished) continue;
       games += 1;
