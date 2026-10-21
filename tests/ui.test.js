@@ -49,15 +49,25 @@ function makeRandom(seed) {
   };
 }
 
-function botAction(m, pick) {
+function botAction(m, pick, used) {
   const ix = interactions(m);
   const any = (xs) => xs[pick(xs.length)];
+  // Use a held power now and then, whenever the screen offers it.
+  if (ix.canUsePower && ix.phase !== 'joker' && pick(4) === 0) {
+    used.add(m.game.held[m.game.current]);
+    return { type: 'use-power' };
+  }
   switch (ix.phase) {
     case 'handoff': return { type: 'handoff' };
     case 'draw': return { type: 'draw' };
     case 'stuck': return { type: 'continue' };
+    case 'jokerPass': return { type: 'continue' };
     case 'joker':
-      return R.canPlayHeldPower(m.game) && pick(2) === 0 ? { type: 'joker-play' } : { type: 'joker-draft' };
+      if (pick(2) === 0) {
+        used.add(m.game.held[m.game.current]);
+        return { type: 'use-power' };
+      }
+      return { type: 'joker-draft' };
     case 'draft': return { type: 'keep', index: pick(R.draftOptions(m.game).length) };
     case 'move':
       if (ix.canConfirm) return { type: 'confirm' };
@@ -92,16 +102,18 @@ function checkInvariants(g) {
 
 test('bots can play complete games through the screen without errors', () => {
   const seen = new Set();
-  for (let seed = 1; seed <= 25; seed += 1) {
+  const used = new Set();
+  for (let seed = 1; seed <= 30; seed += 1) {
     const pick = makeRandom(seed * 7919);
-    let m = initModel(R.createGame({ seed }));
+    const config = { powerTiming: seed % 2 ? 'afterDraw' : 'beforeDraw' };
+    let m = initModel(R.createGame({ seed, config }));
     let steps = 0;
     while (m.game.winner === null) {
       steps += 1;
       assert.ok(steps < 40000, `seed ${seed}: game did not finish`);
       const html = view(m);
       assert.ok(html.includes('class="board"'));
-      const action = botAction(m, pick);
+      const action = botAction(m, pick, used);
       seen.add(interactions(m).phase);
       const next = update(m, action);
       assert.notEqual(next, m, `seed ${seed}: action ${JSON.stringify(action)} did nothing`);
@@ -114,6 +126,7 @@ test('bots can play complete games through the screen without errors', () => {
   for (const phase of ['handoff', 'draw', 'move', 'stuck', 'joker', 'draft', 'lovers', 'devil']) {
     assert.ok(seen.has(phase), `phase ${phase} never came up`);
   }
+  for (const power of Object.values(R.POWERS)) assert.ok(used.has(power), `${power} never used`);
 });
 
 // --- specific screens ---------------------------------------------------------------
@@ -160,15 +173,63 @@ test('a commander with an escort offers both options', () => {
 
 test('The Devil marks the units it would kill before you confirm', () => {
   let m = modelWith({ 'p0-s1': 8, 'p1-s1': 9, 'p1-s2': 11 }, {
-    moveDecks: [{ draw: [R.JOKER], discard: [] }, { draw: [1], discard: [] }],
+    moveDecks: [{ draw: [3], discard: [] }, { draw: [1], discard: [] }],
     held: [R.POWERS.DEVIL, null],
   });
   m = update(m, { type: 'draw' });
-  m = update(m, { type: 'joker-play' });
+  assert.ok(view(m).includes('data-action="use-power"'));
+  m = update(m, { type: 'use-power' });
   m = update(m, { type: 'tap', key: 'shared-4' });
   assert.deepEqual(interactions(m).victims, ['p1-s1']);
   assert.ok(view(m).includes('doomed'));
   m = update(m, { type: 'confirm' });
   assert.equal(R.getUnit(m.game, 'p1-s1').pos, R.HOME);
   assert.equal(R.getUnit(m.game, 'p1-s2').pos, 10);
+});
+
+test('after draw: the screen offers the held power on a number card and on a joker', () => {
+  let m = modelWith({ 'p0-s1': 3 }, {
+    moveDecks: [{ draw: [2], discard: [] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.TOWER, null],
+  });
+  assert.ok(!interactions(m).canUsePower, 'not before drawing');
+  m = update(m, { type: 'draw' });
+  assert.equal(interactions(m).phase, 'move');
+  assert.ok(interactions(m).canUsePower);
+  m = update(m, { type: 'use-power' });
+  assert.equal(m.game.current, 1);
+  assert.equal(m.game.held[0], null);
+
+  let j = modelWith({}, {
+    moveDecks: [{ draw: [R.JOKER], discard: [] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.TOWER, null],
+  });
+  j = update(j, { type: 'draw' });
+  assert.equal(interactions(j).phase, 'joker');
+  assert.ok(view(j).includes('Use The Tower instead'));
+});
+
+test('before draw: the held power is offered instead of drawing', () => {
+  const base = R.createGame({ seed: 3, firstPlayer: 0, config: { powerTiming: 'beforeDraw' } });
+  let m = initModel({ ...base, held: [R.POWERS.TOWER, null] });
+  assert.equal(interactions(m).phase, 'draw');
+  assert.ok(interactions(m).canUsePower);
+  assert.ok(view(m).includes('Use The Tower'));
+  m = update(m, { type: 'draw' });
+  assert.ok(!interactions(m).canUsePower);
+});
+
+test('The Hanged Man turns the drawn card into a backward move, then an extra turn', () => {
+  let m = modelWith({ 'p0-s1': 9 }, {
+    moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.HANGED_MAN, null],
+  });
+  m = update(m, { type: 'draw' });
+  m = update(m, { type: 'use-power' });
+  assert.equal(interactions(m).phase, 'move');
+  assert.ok(view(m).includes('move a unit 3 back'));
+  m = update(m, { type: 'tap', key: 'shared-5' });
+  m = update(m, { type: 'confirm' });
+  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 6);
+  assert.equal(interactions(m).phase, 'draw');
 });

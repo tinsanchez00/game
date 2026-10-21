@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as R from '../src/rules/index.js';
 import {
   JOKER, MOVE_DECK, POWERS,
-  canPlayHeldPower, currentMoves, draftOptions, drawCard, playDraft,
-  playDrawnNumber, playHeldPower,
+  canUsePower, createGame, currentMoves, draftOptions, drawCard, playDraft,
+  playDrawnNumber, powerUseChoices, usePower,
 } from '../src/rules/index.js';
 import { gameWith, pos } from './helpers.js';
 
@@ -88,18 +89,82 @@ test('drafting while holding a power sends the old one to the bottom', () => {
   assert.deepEqual(after.powerDeck, [POWERS.DEVIL, POWERS.HANGED_MAN, POWERS.LOVERS, POWERS.HERMIT]);
 });
 
-// --- jokers: play a held power ---
+// --- using a held power ---
 
-test('without a held power, only drafting is possible', () => {
-  const g = jokerGame();
-  assert.ok(!canPlayHeldPower(g));
-  assert.throws(() => playHeldPower(g));
+const BEFORE = { powerTiming: 'beforeDraw' };
+
+/** Player 0 to move, holding `power`, with decks and positions set. */
+function holding(power, { config = {}, deck = [3, 2, JOKER], positions = {}, powerDeck = [POWERS.HERMIT, POWERS.DEVIL] } = {}) {
+  const base = createGame({ seed: 1, firstPlayer: 0, config });
+  const units = base.units.map((u) => (u.id in positions ? { ...u, pos: positions[u.id] } : u));
+  return { ...base, units, held: [power, null], powerDeck, moveDecks: [{ draw: deck, discard: [] }, { draw: [1], discard: [] }] };
+}
+
+test('no held power: nothing to use', () => {
+  const g = drawCard(holding(null));
+  assert.ok(!canUsePower(g));
+  assert.deepEqual(powerUseChoices(g), []);
+  assert.throws(() => usePower(g));
 });
 
-test('a played power goes to the bottom of the power deck and is no longer held', () => {
-  const g = jokerGame({ held: [POWERS.TOWER, null], powerDeck: [POWERS.HERMIT] });
-  const after = playHeldPower(g);
+test('after draw: the power replaces the drawn card, which stays spent', () => {
+  const g = drawCard(holding(POWERS.TOWER, { positions: { 'p0-s1': 2 } }));
+  assert.equal(g.drawn, 3);
+  assert.ok(canUsePower(g));
+  const after = usePower(g);
   assert.equal(after.held[0], null);
-  assert.deepEqual(after.powerDeck, [POWERS.HERMIT, POWERS.TOWER]);
+  assert.deepEqual(after.powerDeck, [POWERS.HERMIT, POWERS.DEVIL, POWERS.TOWER]);
+  assert.deepEqual(after.moveDecks[0].discard, [3]);
+  assert.equal(after.drawn, null);
   assert.equal(after.current, 1);
+  assert.equal(pos(after, 'p0-s1'), 2);
+});
+
+test('after draw: the power can be used even when the card has a valid move', () => {
+  const g = drawCard(holding(POWERS.TOWER));
+  assert.ok(currentMoves(g).length > 0);
+  assert.ok(canUsePower(g));
+});
+
+test('after draw: not before drawing', () => {
+  assert.ok(!canUsePower(holding(POWERS.TOWER)));
+});
+
+test('a joker while holding a power: draft, or use the power instead', () => {
+  const g = drawCard(holding(POWERS.TOWER, { deck: [JOKER] }));
+  assert.ok(canUsePower(g));
+  assert.ok(R.canDraft(g));
+  const used = usePower(g);
+  assert.equal(used.held[0], null);
+  assert.equal(used.current, 1);
+  const drafted = playDraft(g, 0);
+  assert.equal(drafted.held[0], POWERS.HERMIT);
+  assert.ok(drafted.powerDeck.includes(POWERS.TOWER));
+});
+
+test('a power drafted this turn is first usable next turn', () => {
+  let g = playDraft(drawCard(holding(null, { deck: [JOKER, 2, 3] })), 0);
+  assert.equal(g.current, 1);
+  g = R.playDrawnNumber(drawCard(g), { unit: 'p1-s1' });
+  g = drawCard(g);
+  assert.equal(g.current, 0);
+  assert.ok(canUsePower(g));
+});
+
+test('before draw: the power replaces drawing; the deck is untouched', () => {
+  const g = holding(POWERS.TOWER, { config: BEFORE });
+  assert.ok(canUsePower(g));
+  const after = usePower(g);
+  assert.deepEqual(after.moveDecks[0], g.moveDecks[0]);
+  assert.equal(after.current, 1);
+  assert.ok(!canUsePower(drawCard(holding(POWERS.TOWER, { config: BEFORE }))));
+});
+
+test('powerTiming is validated', () => {
+  assert.throws(() => createGame({ config: { powerTiming: 'whenever' } }), /powerTiming/);
+});
+
+test('with powers off nothing can be used', () => {
+  const g = drawCard(holding(POWERS.TOWER, { config: { powers: false } }));
+  assert.ok(!canUsePower(g));
 });

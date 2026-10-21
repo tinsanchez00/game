@@ -140,7 +140,7 @@ function playerPanel(m, ix, victims, victimKeys) {
     : '<div class="card back deck deck-card"></div>';
   const held = g.held[p];
   const power = held
-    ? `<div class="card face power${ix.phase === 'joker' ? ' ready' : ''}">${powerCard(held)}</div>`
+    ? `<div class="card face power${ix.canUsePower ? ' ready' : ''}">${powerCard(held)}</div>`
     : `<div class="card empty">${esc(TEXT.noPower)}</div>`;
 
   return `<section class="panel me" aria-label="${esc(team(p))}">
@@ -214,13 +214,10 @@ function actions(m, ix) {
       status = S.jokerPass;
       controls = `<div class="buttons">${btn('continue', TEXT.continue, { primary: true })}</div>`;
       break;
-    case 'joker': {
+    case 'joker':
       status = S.joker;
-      const held = g.held[g.current];
-      const playLabel = held ? TEXT.play(powerName(held)) : TEXT.play(TEXT.power.toLowerCase());
-      controls = `<div class="buttons">${btn('joker-draft', TEXT.draft, { primary: true })}${btn('joker-play', playLabel, { disabled: !R.canPlayHeldPower(g) })}</div>`;
+      controls = `<div class="buttons">${btn('joker-draft', TEXT.draft, { primary: true })}${btn('use-power', TEXT.usePowerInstead(powerName(ix.power)))}</div>`;
       break;
-    }
     case 'draft': {
       status = S.draft(g.hangedDraw);
       const cards = R.draftOptions(g).map((id, i) =>
@@ -239,6 +236,12 @@ function actions(m, ix) {
       break;
     default:
       break;
+  }
+
+  // The held power can stand in for the card (after draw) or the draw itself.
+  if (ix.canUsePower && ['draw', 'move', 'stuck', 'jokerPass'].includes(ix.phase)) {
+    const label = ix.phase === 'draw' ? TEXT.usePower(powerName(ix.power)) : TEXT.usePowerInstead(powerName(ix.power));
+    controls += `<div class="buttons">${btn('use-power', label)}</div>`;
   }
 
   return `<div class="actions" aria-live="polite">

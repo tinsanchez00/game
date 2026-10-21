@@ -7,6 +7,12 @@
 
 export const JOKER = 'joker';
 
+/** When a held power can be used, instead of resolving or drawing a card. */
+export const POWER_TIMINGS = Object.freeze({
+  AFTER_DRAW: 'afterDraw', // draw, then use the power instead of the card (card is spent)
+  BEFORE_DRAW: 'beforeDraw', // use the power instead of drawing
+});
+
 export const POWER_IDS = Object.freeze([
   'hanged-man', 'lovers', 'devil', 'tower', 'hermit',
 ]);
@@ -14,6 +20,7 @@ export const POWER_IDS = Object.freeze([
 export const DEFAULT_CONFIG = deepFreeze({
   // false: a joker is a no-move card and the power deck is unused.
   powers: true,
+  powerTiming: 'afterDraw', // see POWER_TIMINGS
   moveDeck: [1, 2, 2, 3, 3, 3, 4, JOKER, JOKER],
   powerDeck: [...POWER_IDS],
   soldiers: 5,
@@ -68,6 +75,8 @@ export function pathLengthOf(board) {
 
 export function validateConfig(c) {
   check(typeof c.powers === 'boolean', 'powers must be true or false');
+  check(Object.values(POWER_TIMINGS).includes(c.powerTiming),
+    `powerTiming must be one of ${Object.values(POWER_TIMINGS).join(', ')}`);
 
   check(Array.isArray(c.moveDeck) && c.moveDeck.length > 0, 'moveDeck needs at least one card');
   for (const card of c.moveDeck) {

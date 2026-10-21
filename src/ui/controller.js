@@ -5,7 +5,8 @@
 // ui = {
 //   viewer,      player whose side is shown at the bottom
 //   pick,        current selection (see below) or null
-//   joker,       null | 'draft' | 'play' — choice made after drawing a joker
+//   joker,       null | 'draft' — choice made after drawing a joker
+//   using,       true while picking targets for the held power
 //   confirmNew,  showing the "start a new game?" prompt
 //   events,      what the last action did, for the status line
 // }
@@ -17,7 +18,7 @@ export function initModel(game = R.createGame()) {
 }
 
 function freshUi(viewer, events = []) {
-  return { viewer, pick: null, joker: null, confirmNew: false, events };
+  return { viewer, pick: null, joker: null, using: false, confirmNew: false, events };
 }
 
 /** Where a unit is: a board cell id, or `home:<player>` / `asc:<player>`. */
@@ -34,11 +35,11 @@ export function phaseOf(m) {
   const g = m.game;
   if (g.winner !== null) return 'won';
   if (g.current !== m.ui.viewer) return 'handoff';
+  if (m.ui.using && R.canUsePower(g)) return g.held[g.current];
   if (g.drawn === null) return 'draw';
   if (R.isNumberCard(g.drawn)) return R.currentMoves(g).length > 0 ? 'move' : 'stuck';
   if (R.mustPassJoker(g)) return 'jokerPass';
-  if (g.hangedDraw || m.ui.joker === 'draft') return 'draft';
-  if (m.ui.joker === 'play') return g.held[g.current];
+  if (m.ui.joker === 'draft' || !R.canUsePower(g)) return 'draft';
   return 'joker';
 }
 
@@ -94,11 +95,17 @@ function uniqueKeys(g, ids) {
   return [...new Set(ids.map((id) => unitKey(g, R.getUnit(g, id))))];
 }
 
+/** Power uses that name a unit (Lovers, Devil); empty when it has no target. */
+function targetedUses(g) {
+  return R.powerUseChoices(g).filter((c) => c.unit);
+}
+
 // --- what the screen should offer -------------------------------------------
 
 /**
  * Everything the view needs to draw highlights and controls:
- * { phase, tappable, selected, dest, targets, victims, options, chosen, canConfirm }
+ * { phase, tappable, selected, dest, targets, victims, options, chosen, canConfirm,
+ *   canUsePower, power }
  */
 export function interactions(m) {
   const g = m.game;
@@ -107,6 +114,8 @@ export function interactions(m) {
   const out = {
     phase, tappable: [], selected: null, dest: null, targets: [], victims: [],
     options: [], chosen: null, canConfirm: false,
+    canUsePower: !m.ui.using && R.canUsePower(g) && phase !== 'won' && phase !== 'handoff',
+    power: g.held[g.current],
   };
 
   if (phase === 'move') {
@@ -126,7 +135,7 @@ export function interactions(m) {
   }
 
   if (phase === R.POWERS.LOVERS) {
-    const choices = R.heldPowerChoices(g);
+    const choices = targetedUses(g);
     if (pick?.unit) {
       const mine = choices.filter((c) => c.unit === pick.unit);
       out.selected = unitKey(g, R.getUnit(g, pick.unit));
@@ -142,14 +151,14 @@ export function interactions(m) {
   }
 
   if (phase === R.POWERS.DEVIL) {
-    const ids = R.heldPowerChoices(g).map((c) => c.unit);
+    const ids = targetedUses(g).map((c) => c.unit);
     out.tappable = uniqueKeys(g, ids);
     if (pick?.candidates) {
       out.selected = pick.source;
       out.options = Object.keys(pick.candidates);
     }
     if (pick?.unit) {
-      const after = R.playHeldPower(g, { unit: pick.unit });
+      const after = R.usePower(g, { unit: pick.unit });
       out.selected = unitKey(g, R.getUnit(g, pick.unit));
       out.victims = changedToHome(g, after);
       out.chosen = R.getUnit(g, pick.unit).type;
@@ -216,13 +225,11 @@ export function update(m, action) {
     case 'joker-draft':
       return phase === 'joker' ? ui({ joker: 'draft', pick: null }) : m;
 
-    case 'joker-play': {
-      if (phase !== 'joker' || !R.canPlayHeldPower(g)) return m;
+    case 'use-power': {
+      if (!ix.canUsePower) return m;
       const power = g.held[g.current];
-      if (power === R.POWERS.LOVERS || power === R.POWERS.DEVIL) {
-        return ui({ joker: 'play', pick: null });
-      }
-      return commit(m, R.playHeldPower(g, {}), [{ type: 'played', player: g.current, power }]);
+      if (targetedUses(g).length > 0) return ui({ using: true, pick: null, joker: null });
+      return commit(m, R.usePower(g, {}), [{ type: 'played', player: g.current, power }]);
     }
 
     case 'keep':
@@ -231,7 +238,7 @@ export function update(m, action) {
 
     case 'cancel':
       if (phase === R.POWERS.LOVERS || phase === R.POWERS.DEVIL) {
-        return m.ui.pick ? ui({ pick: null }) : ui({ joker: null, pick: null });
+        return m.ui.pick ? ui({ pick: null }) : ui({ using: false, pick: null });
       }
       return ui({ pick: null });
 
@@ -251,7 +258,7 @@ export function update(m, action) {
         return commit(m, R.playDrawnNumber(g, opt.move));
       }
       if (phase === R.POWERS.DEVIL) {
-        return commit(m, R.playHeldPower(g, { unit: m.ui.pick.unit }), [
+        return commit(m, R.usePower(g, { unit: m.ui.pick.unit }), [
           { type: 'played', player: g.current, power: R.POWERS.DEVIL },
         ]);
       }
@@ -277,12 +284,12 @@ function tap(m, key, phase, ix) {
   }
 
   if (phase === R.POWERS.LOVERS) {
-    const choices = R.heldPowerChoices(g);
+    const choices = targetedUses(g);
     if (m.ui.pick?.unit && ix.targets.includes(key)) {
       const choice = choices.find(
         (c) => c.unit === m.ui.pick.unit && unitKey(g, R.getUnit(g, c.target)) === key,
       );
-      return commit(m, R.playHeldPower(g, choice), [
+      return commit(m, R.usePower(g, choice), [
         { type: 'played', player: g.current, power: R.POWERS.LOVERS },
       ]);
     }
@@ -290,7 +297,7 @@ function tap(m, key, phase, ix) {
   }
 
   if (phase === R.POWERS.DEVIL) {
-    return pickCandidate(m, key, R.heldPowerChoices(g).map((c) => c.unit));
+    return pickCandidate(m, key, targetedUses(g).map((c) => c.unit));
   }
 
   return m;

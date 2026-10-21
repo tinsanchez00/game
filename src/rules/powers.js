@@ -111,20 +111,23 @@ function hermit(state) {
 /**
  * Applies `power` for `player` with `args` (one of powerChoices). Returns the
  * new state; does not touch turn order, held powers or the power deck.
- * The Hanged Man changes no units here: its draw is handled in turn.js.
+ * With no valid target, `args` must be {} and nothing happens.
+ * The Hanged Man changes no units here: turn.js makes the turn's card move
+ * backward.
  */
 export function applyPower(state, player, power, args = {}) {
   const valid = powerChoices(state, player, power);
-  if (!valid.some((c) => sameChoice(c, args))) {
+  const allowed = valid.length > 0 ? valid : [{}]; // nothing to target: no effect
+  if (!allowed.some((c) => sameChoice(c, args))) {
     throw new Error(`applyPower: invalid choice for ${power}`);
   }
   switch (power) {
     case POWERS.HANGED_MAN:
       return state;
     case POWERS.LOVERS:
-      return lovers(state, args);
+      return args.unit ? lovers(state, args) : state;
     case POWERS.DEVIL:
-      return devil(state, args);
+      return args.unit ? devil(state, args) : state;
     case POWERS.TOWER:
       return tower(state);
     case POWERS.HERMIT:

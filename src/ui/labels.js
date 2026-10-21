@@ -39,7 +39,8 @@ export const TEXT = {
   cancel: 'Cancel',
   continue: 'Continue',
   draft: 'Draft a power',
-  play: (power) => `Play ${power}`,
+  usePower: (power) => `Use ${power}`,
+  usePowerInstead: (power) => `Use ${power} instead`,
   unleash: 'Unleash',
 
   status: {
@@ -52,8 +53,8 @@ export const TEXT = {
     pickMove: 'Tap the glowing cell to move there',
     stuck: (n, backward) => `No valid ${backward ? 'backward ' : ''}move with ${n}`,
     jokerPass: 'Joker · no move this turn',
-    joker: 'Joker · draft a power or play yours',
-    draft: (hanged) => (hanged ? 'The Hanged Man drew a Joker · keep one power' : 'Keep one power'),
+    joker: 'Joker · draft a power, or use yours instead',
+    draft: (hanged) => (hanged ? 'The Hanged Man · your Joker drafts a power' : 'Keep one power'),
     loversPick: 'The Lovers · pick a unit in the middle lane',
     loversTarget: 'The Lovers · pick the lone ally to join',
     devilPick: 'The Devil · pick one of your units in the middle lane',

@@ -3,16 +3,16 @@
 //   drawCard(state)                         -> state.drawn is set
 //   number card: currentMoves(state), then playDrawnNumber(state, move | null)
 //   joker:       draftOptions(state), then playDraft(state, keepIndex)
-//            or  heldPowerChoices(state), then playHeldPower(state, args)
-//            or, when neither is possible (always so with powers off),
-//                passJoker(state)
+//            or, when drafting isn't possible, passJoker(state)
+//   any turn:    canUsePower / powerUseChoices / usePower(state, args) to use
+//                the held power instead of the card (config.powerTiming
+//                'afterDraw') or instead of drawing ('beforeDraw')
 //
-// Playing the Hanged Man draws again at once and sets state.hangedDraw; that
-// card is then resolved through the same functions (a number card moves a
-// unit backward, a joker can only draft), after which the same player takes
-// another turn.
+// state.hangedDraw marks a turn whose card moves backward (the Hanged Man);
+// after it, the same player takes another turn.
 
 import { JOKER, POWERS, isNumberCard } from './cards.js';
+import { POWER_TIMINGS } from './config.js';
 import { endTurn, legalMoves, playNumberCard } from './moves.js';
 import { applyPower, powerChoices } from './powers.js';
 import { shuffle } from './random.js';
@@ -96,49 +96,61 @@ export function playDraft(state, keepIndex) {
   return endTurn({ ...state, held, powerDeck });
 }
 
-export function heldPowerChoices(state) {
-  assertJoker(state, 'heldPowerChoices');
-  if (!state.config.powers || state.hangedDraw) return [];
-  const power = state.held[state.current];
-  if (!power) return [];
-  return powerChoices(state, state.current, power);
-}
-
-export function canPlayHeldPower(state) {
-  return heldPowerChoices(state).length > 0;
-}
-
-/** True when the drawn joker allows neither drafting nor playing a power. */
+/** True when the drawn joker can't draft (powers off, or an empty power deck). */
 export function mustPassJoker(state) {
   assertJoker(state, 'mustPassJoker');
-  return !canDraft(state) && !canPlayHeldPower(state);
+  return !canDraft(state);
 }
 
-/** Resolves a joker that can do nothing: the turn ends without a move. */
+/** Resolves a joker that can't draft: the turn ends without a move. */
 export function passJoker(state) {
   if (!mustPassJoker(state)) {
-    throw new Error('passJoker: this joker can draft or play a power');
+    throw new Error('passJoker: this joker can draft');
   }
   return endTurn(state);
 }
 
-export function playHeldPower(state, args = {}) {
-  assertJoker(state, 'playHeldPower');
-  if (!state.config.powers) throw new Error('playHeldPower: powers are turned off');
-  if (state.hangedDraw) {
-    throw new Error('playHeldPower: a joker drawn by the Hanged Man can only draft');
-  }
+// --- using a held power ---------------------------------------------------------
+//
+// A power drafted this turn is never usable this turn: drafting ends the turn.
+
+/** Can the current player use their held power right now? */
+export function canUsePower(state) {
+  if (state.winner !== null || !state.config.powers) return false;
+  if (!state.held[state.current] || state.hangedDraw) return false;
+  return state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW
+    ? state.drawn === null
+    : state.drawn !== null;
+}
+
+/**
+ * Valid argument objects for usePower: the power's targets, or [{}] when it
+ * has none (it may still be used, to no effect). Empty when it can't be used.
+ */
+export function powerUseChoices(state) {
+  if (!canUsePower(state)) return [];
+  const choices = powerChoices(state, state.current, state.held[state.current]);
+  return choices.length > 0 ? choices : [{}];
+}
+
+/**
+ * Uses the held power instead of resolving the drawn card (after-draw timing;
+ * the card stays spent) or instead of drawing (before-draw timing).
+ * The Hanged Man is free: the turn's card is then resolved moving backward,
+ * followed by another turn.
+ */
+export function usePower(state, args = {}) {
+  if (!canUsePower(state)) throw new Error('usePower: no power can be used now');
   const player = state.current;
   const power = state.held[player];
-  if (!power) throw new Error('playHeldPower: no power held');
-
   const after = applyPower(state, player, power, args);
   const held = [...after.held];
   held[player] = null;
-  const played = { ...after, held, powerDeck: [...after.powerDeck, power] };
+  const used = { ...after, held, powerDeck: [...after.powerDeck, power] };
 
   if (power === POWERS.HANGED_MAN) {
-    return drawCard({ ...played, drawn: null, hangedDraw: true });
+    const backward = { ...used, hangedDraw: true };
+    return state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? drawCard(backward) : backward;
   }
-  return endTurn(played);
+  return endTurn(used);
 }

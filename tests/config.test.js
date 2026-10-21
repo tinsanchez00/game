@@ -73,7 +73,7 @@ test('with powers off a joker is a no-move card', () => {
   assert.ok(R.mustPassJoker(g));
   assert.deepEqual(R.draftOptions(g), []);
   assert.throws(() => R.playDraft(g, 0));
-  assert.throws(() => R.playHeldPower(g));
+  assert.ok(!R.canUsePower(g));
   const after = R.passJoker(g);
   assert.equal(after.current, 1);
   assert.equal(after.drawn, null);
