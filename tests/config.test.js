@@ -26,7 +26,7 @@ test('defaults match the rulebook', () => {
   const c = R.makeConfig();
   assert.deepEqual(c, R.DEFAULT_CONFIG);
   assert.equal(c.powers, true);
-  assert.deepEqual([...c.moveDeck], [1, 2, 2, 3, 3, 3, 4, JOKER, JOKER]);
+  assert.deepEqual([...c.moveDeck], [1, 2, 2, 3, 3, 3, 4, JOKER]);
   assert.equal(c.soldiers, 5);
   assert.equal(c.commanders, 1);
   assert.equal(c.maxPerCell, 2);

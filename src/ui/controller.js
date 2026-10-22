@@ -232,6 +232,11 @@ function describe(before, after, actor) {
   if (before.held[actor] !== after.held[actor] && after.held[actor]) {
     events.push({ type: 'drafted', player: actor, power: after.held[actor] });
   }
+  // The same player starts a new turn (Hanged Man, or the tower extra-turn rule).
+  const turnStart = (s) => s.drawn === null && !s.hanged && !s.campsite && !s.lovers;
+  if (after.winner === null && after.current === actor && turnStart(after) && !turnStart(before)) {
+    events.push({ type: 'extraTurn', player: actor });
+  }
   return events;
 }
 

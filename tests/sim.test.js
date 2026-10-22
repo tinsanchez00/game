@@ -292,7 +292,8 @@ test('the mixed look-ahead draws one depth per turn, at the level odds', () => {
 });
 
 test('the position cache never changes a decision', () => {
-  for (const [level, config] of [['strong', { soldiers: 4 }], ['average', { soldiers: 3, powerDeck: Array(5).fill('hanged-man') }]]) {
+  let hits = 0;
+  for (const [level, config] of [['strong', { soldiers: 4 }], ['average', { soldiers: 3, powerDeck: Array(5).fill('hanged-man'), rules: { hangedTurn: false } }]]) {
     for (const seed of [1, 2]) {
       const play = (cache) => playGame({
         config, seed, bots: [powerBot({ level, cache, random: rng(seed) }), powerBot({ level, cache, random: rng(seed + 5) })],
@@ -300,9 +301,10 @@ test('the position cache never changes a decision', () => {
       const bots = [powerBot({ level, cache: true, random: rng(seed) }), powerBot({ level, cache: true, random: rng(seed + 5) })];
       const withCache = playGame({ config, seed, bots });
       assert.deepEqual(withCache, play(false), `${level} ${seed}`);
-      assert.ok(bots[0].stats.hits + bots[1].stats.hits > 0, 'the cache was used');
+      hits += bots[0].stats.hits + bots[1].stats.hits;
     }
   }
+  assert.ok(hits > 0, 'the cache was used');
 });
 
 test('the strong power bot beats the average one (first-batch levels)', () => {

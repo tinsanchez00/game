@@ -24,11 +24,14 @@ function playing(power, positions = {}, { deck = [3, 1, 2], ...extra } = {}) {
 }
 
 // --- The Hanged Man (free power) ---
+// These cover the earlier forward-card version (rules.hangedTurn off); the
+// extra-turn version (the default) is tested at the end of this file.
+const FWD = { rules: { hangedTurn: false } };
 // Default board: path 1-3 start lane, 4-12 middle lane, 13-14 end lane;
 // towers on 7 and 14, campsite on 5.
 
 test('Hanged Man: the drawn card is kept and will move backward', () => {
-  const g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11 }));
+  const g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11 }, { config: FWD }));
   assert.equal(g.current, 0);
   assert.equal(g.drawn, 3);
   assert.deepEqual(g.hanged, { stage: 'back', unit: null });
@@ -38,7 +41,7 @@ test('Hanged Man: the drawn card is kept and will move backward', () => {
 });
 
 test('Hanged Man: back by the card, then a new card moves the same unit forward, then the turn ends', () => {
-  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11, 'p0-s2': 2 }));
+  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11, 'p0-s2': 2 }, { config: FWD }));
   g = playDrawnNumber(g, { unit: 'p0-s1' });
   assert.equal(pos(g, 'p0-s1'), 8);
   assert.equal(g.current, 0);
@@ -54,13 +57,13 @@ test('Hanged Man: back by the card, then a new card moves the same unit forward,
 });
 
 test('Hanged Man: a backward move can kill', () => {
-  const g = playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11, 'p1-s1': 8 })), { unit: 'p0-s1' });
+  const g = playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11, 'p1-s1': 8 }, { config: FWD })), { unit: 'p0-s1' });
   assert.equal(pos(g, 'p0-s1'), 8);
   assert.equal(pos(g, 'p1-s1'), HOME);
 });
 
 test('Hanged Man: going back past the first cell sends the unit home; the forward card enters it again', () => {
-  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 2 }, { deck: [3, 2] }));
+  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 2 }, { deck: [3, 2], config: FWD }));
   g = playDrawnNumber(g, { unit: 'p0-s1' });
   assert.equal(pos(g, 'p0-s1'), HOME);
   g = playDrawnNumber(drawCard(g), { unit: 'p0-s1' });
@@ -69,31 +72,31 @@ test('Hanged Man: going back past the first cell sends the unit home; the forwar
 });
 
 test('Hanged Man: backward moves respect towers', () => {
-  const g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10, 'p0-s2': 11, 'p1-s1': 7 }));
+  const g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10, 'p0-s2': 11, 'p1-s1': 7 }, { config: FWD }));
   assert.ok(!currentMoves(g).some((m) => m.unit === 'p0-s1'));
   assert.ok(currentMoves(g).some((m) => m.unit === 'p0-s2'));
 });
 
 test('Hanged Man: you must move backward when you can', () => {
-  assert.throws(() => playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11 })), null));
+  assert.throws(() => playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11 }, { config: FWD })), null));
 });
 
 test('Hanged Man (after draw): it cannot be used on a number card with no backward move', () => {
-  const g = playing(POWERS.HANGED_MAN, {}); // every unit at home, drew a 3
+  const g = playing(POWERS.HANGED_MAN, {}, { config: FWD }); // every unit at home, drew a 3
   assert.ok(!canUsePower(g));
   assert.deepEqual(powerUseChoices(g), []);
   assert.throws(() => usePower(g));
-  const blocked = playing(POWERS.HANGED_MAN, { 'p0-s1': 10, 'p1-s1': 7 }); // 10 - 3 is the opponent's tower
+  const blocked = playing(POWERS.HANGED_MAN, { 'p0-s1': 10, 'p1-s1': 7 }, { config: FWD }); // 10 - 3 is the opponent's tower
   assert.ok(!canUsePower(blocked));
-  assert.ok(canUsePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 })));
+  assert.ok(canUsePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 }, { config: FWD })));
 });
 
 test('Hanged Man (after draw): it can not be used on a drawn joker', () => {
-  assert.ok(!canUsePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 }, { deck: [JOKER, 2] })));
+  assert.ok(!canUsePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 }, { deck: [JOKER, 2], config: FWD })));
 });
 
 test('Hanged Man (before draw): a card with no backward move spends it and ends the turn', () => {
-  const base = createGame({ seed: 1, firstPlayer: 0, config: { powerTiming: 'beforeDraw' } });
+  const base = createGame({ seed: 1, firstPlayer: 0, config: { powerTiming: 'beforeDraw', ...FWD } });
   let g = {
     ...base,
     moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
@@ -111,7 +114,7 @@ test('Hanged Man (before draw): a card with no backward move spends it and ends 
 
 test('Hanged Man (before draw) on a joker: it drafts as usual, with no forward card', () => {
   const base = gameWith({ 'p0-s1': 10 }, {
-    config: { powerTiming: 'beforeDraw' },
+    config: { powerTiming: 'beforeDraw', ...FWD },
     moveDecks: [{ draw: [JOKER, 2], discard: [] }, { draw: [1], discard: [] }],
     held: [POWERS.HANGED_MAN, null],
     powerDeck: [POWERS.TOWER, POWERS.HERMIT],
@@ -128,7 +131,7 @@ test('Hanged Man (before draw) on a joker: it drafts as usual, with no forward c
 });
 
 test('Hanged Man: a joker as the forward card drafts instead of moving', () => {
-  let g = playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11 }, { deck: [3, JOKER] })), { unit: 'p0-s1' });
+  let g = playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11 }, { deck: [3, JOKER], config: FWD })), { unit: 'p0-s1' });
   g = drawCard(g);
   assert.equal(g.drawn, JOKER);
   g = playDraft(g, 1);
@@ -138,7 +141,7 @@ test('Hanged Man: a joker as the forward card drafts instead of moving', () => {
 });
 
 test('Hanged Man: if the forward move is not valid, the unit stays', () => {
-  let g = playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 9, 'p1-s1': 7 }, { deck: [3, 1] })), { unit: 'p0-s1' });
+  let g = playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 9, 'p1-s1': 7 }, { deck: [3, 1], config: FWD })), { unit: 'p0-s1' });
   assert.equal(pos(g, 'p0-s1'), 6);
   g = drawCard(g); // 1 onto the tower the opponent holds
   assert.equal(currentMoves(g).length, 0);
@@ -148,7 +151,7 @@ test('Hanged Man: if the forward move is not valid, the unit stays', () => {
 });
 
 test('Hanged Man before drawing: you draw after using it; that card moves backward, the next forward', () => {
-  const base = createGame({ seed: 1, firstPlayer: 0, config: { powerTiming: 'beforeDraw' } });
+  const base = createGame({ seed: 1, firstPlayer: 0, config: { powerTiming: 'beforeDraw', ...FWD } });
   let g = {
     ...base,
     units: base.units.map((u) => (u.id === 'p0-s1' ? { ...u, pos: 11 } : u)),
@@ -168,7 +171,7 @@ test('Hanged Man before drawing: you draw after using it; that card moves backwa
 
 test('Hanged Man: the commander can bring its escort on both moves', () => {
   const units = { ...soldiersOut(0, [11, 1, 2, 3, 6]), 'p0-c1': 11 };
-  let g = usePower(playing(POWERS.HANGED_MAN, units));
+  let g = usePower(playing(POWERS.HANGED_MAN, units, { config: FWD }));
   g = playDrawnNumber(g, { unit: 'p0-c1', escort: 'p0-s1' });
   assert.equal(pos(g, 'p0-c1'), 8);
   assert.equal(pos(g, 'p0-s1'), 8);
@@ -181,7 +184,7 @@ test('Hanged Man: the commander can bring its escort on both moves', () => {
 });
 
 test('Hanged Man: a backward move onto the campsite triggers it before the forward card', () => {
-  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 8 }, { deck: [3, 1] }));
+  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 8 }, { deck: [3, 1], config: FWD }));
   g = playDrawnNumber(g, { unit: 'p0-s1' });
   assert.equal(pos(g, 'p0-s1'), 5);
   assert.deepEqual(g.campsite, { unit: 'p0-s1' });

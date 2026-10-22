@@ -17,7 +17,7 @@ test('drawing takes the top card of your own deck', () => {
   const top = g.moveDecks[1].draw[0];
   const after = drawCard(g);
   assert.equal(after.drawn, top);
-  assert.equal(after.moveDecks[1].draw.length, 8);
+  assert.equal(after.moveDecks[1].draw.length, 7);
   assert.deepEqual(after.moveDecks[1].discard, [top]);
   assert.deepEqual(after.moveDecks[0], g.moveDecks[0]);
 });
@@ -26,13 +26,13 @@ test('you cannot draw twice in one turn', () => {
   assert.throws(() => drawCard(drawCard(gameWith())));
 });
 
-test('drawing from an empty deck reshuffles all 9 cards first', () => {
+test('drawing from an empty deck reshuffles all 8 cards first', () => {
   const g = gameWith({}, {
     moveDecks: [{ draw: [], discard: [...MOVE_DECK] }, { draw: [1], discard: [] }],
   });
   const after = drawCard(g);
   const deck = after.moveDecks[0];
-  assert.equal(deck.draw.length, 8);
+  assert.equal(deck.draw.length, 7);
   assert.deepEqual(deck.discard, [after.drawn]);
   assert.deepEqual(sorted([...deck.draw, ...deck.discard]), sorted(MOVE_DECK));
   assert.notEqual(after.rng, g.rng);

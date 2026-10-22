@@ -214,6 +214,7 @@ function eventsLine(m) {
     if (e.type === 'drafted') return TEXT.event.drafted(t, powerName(e.power));
     if (e.type === 'played') return TEXT.event.played(t, powerName(e.power));
     if (e.type === 'jumped') return TEXT.event.jumped(t);
+    if (e.type === 'extraTurn') return TEXT.event.extraTurn(t);
     return '';
   }).filter(Boolean);
   return lines.length ? `<p class="events">${esc(lines.join(' · '))}</p>` : '';

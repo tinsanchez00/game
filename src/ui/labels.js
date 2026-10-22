@@ -93,5 +93,6 @@ export const TEXT = {
     drafted: (team, power) => `${team} drafted ${power}`,
     played: (team, power) => `${team} played ${power}`,
     jumped: (team) => `${team} jumped to an ally`,
+    extraTurn: (team) => `${team} takes an extra turn`,
   },
 };

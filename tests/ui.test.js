@@ -112,7 +112,8 @@ test('bots can play complete games through the screen without errors', () => {
   for (let seed = 1; seed <= 30; seed += 1) {
     const pick = makeRandom(seed * 7919);
     // Every third game uses the earlier, pairing Lovers.
-    const config = { powerTiming: seed % 2 ? 'afterDraw' : 'beforeDraw', rules: { loversLine: seed % 3 !== 0 } };
+    // Every third game uses the earlier, pairing Lovers; every fourth the forward-card Hanged Man.
+    const config = { powerTiming: seed % 2 ? 'afterDraw' : 'beforeDraw', rules: { loversLine: seed % 3 !== 0, hangedTurn: seed % 4 !== 0 } };
     let m = initModel(R.createGame({ seed, config }));
     let steps = 0;
     while (m.game.winner === null) {
@@ -140,8 +141,8 @@ test('bots can play complete games through the screen without errors', () => {
 
 // --- specific screens ---------------------------------------------------------------
 
-function modelWith(positions, extra) {
-  const base = R.createGame({ seed: 3, firstPlayer: 0 });
+function modelWith(positions, { config, ...extra } = {}) {
+  const base = R.createGame({ seed: 3, firstPlayer: 0, config });
   const game = {
     ...base,
     ...extra,
@@ -228,8 +229,27 @@ test('before draw: the held power is offered instead of drawing', () => {
   assert.ok(!interactions(m).canUsePower);
 });
 
-test('The Hanged Man: back with the drawn card, then the forward card moves the same unit', () => {
+test('The Hanged Man: back with the drawn card, then an extra turn', () => {
   let m = modelWith({ 'p0-s1': 11, 'p0-s2': 1 }, {
+    moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.HANGED_MAN, null],
+  });
+  m = update(m, { type: 'draw' });
+  m = update(m, { type: 'use-power' });
+  assert.ok(view(m).includes('move a unit 3 back'));
+  m = update(m, { type: 'tap', key: 'shared-8' });
+  m = update(m, { type: 'confirm' });
+  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 8);
+  assert.equal(interactions(m).phase, 'draw');
+  assert.equal(m.game.current, 0);
+  assert.match(view(m), /extra turn/);
+  m = update(m, { type: 'draw' });
+  assert.ok(interactions(m).tappable.length > 1, 'any unit can move');
+});
+
+test('The Hanged Man (forward-card version): back with the drawn card, then the forward card moves the same unit', () => {
+  let m = modelWith({ 'p0-s1': 11, 'p0-s2': 1 }, {
+    config: { rules: { hangedTurn: false } },
     moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
     held: [R.POWERS.HANGED_MAN, null],
   });

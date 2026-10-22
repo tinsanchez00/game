@@ -28,7 +28,7 @@ export const DEFAULT_CONFIG = deepFreeze({
   // false: a joker is a no-move card and the power deck is unused.
   powers: true,
   powerTiming: 'afterDraw', // see POWER_TIMINGS
-  moveDeck: [1, 2, 2, 3, 3, 3, 4, JOKER, JOKER],
+  moveDeck: [1, 2, 2, 3, 3, 3, 4, JOKER],
   powerDeck: [...POWER_IDS],
   soldiers: 5,
   commanders: 1,
@@ -46,7 +46,7 @@ export const DEFAULT_CONFIG = deepFreeze({
     escort: true, // false: commanders always move alone
     towersProtect: true, // false: towers are plain cells for captures and the Hermit
     towerExtraTurn: false, // true: landing on a tower with a number card gives another turn
-    hangedTurn: false, // true: the Hanged Man's bonus is an extra turn instead of the forward card
+    hangedTurn: true, // false: the earlier Hanged Man (a forward card for the same unit instead of an extra turn)
     loversLine: true, // false: the earlier Lovers (pair a middle-lane unit with a lone ally there)
   },
 });
