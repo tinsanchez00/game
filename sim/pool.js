@@ -18,9 +18,10 @@ export function seedRange(from, count) {
 
 /**
  * Runs `jobs` (see worker.js) and resolves with their results in order.
- * `onProgress(done, total)` is called after each job.
+ * `onProgress(done, total)` is called after each job, and
+ * `onResult(index, result)` with each job's result as soon as it arrives.
  */
-export async function runJobs(jobs, { threads = availableParallelism(), onProgress } = {}) {
+export async function runJobs(jobs, { threads = availableParallelism(), onProgress, onResult } = {}) {
   const results = new Array(jobs.length);
   let next = 0;
   let done = 0;
@@ -36,6 +37,7 @@ export async function runJobs(jobs, { threads = availableParallelism(), onProgre
       w.on('message', ({ id, result, error }) => {
         if (error) return reject(new Error(error));
         results[id] = result;
+        onResult?.(id, result);
         done += 1;
         onProgress?.(done, jobs.length);
         feed();

@@ -8,9 +8,11 @@
 // Every scenario plays the same seeds (1..N) with the same bot on both sides:
 // the scenario's own `bot`, else --bot, else a search bot of --depth.
 // The output file is rewritten after every scenario; --resume skips the
-// scenarios it already holds.
+// scenarios it already holds. Finished jobs of the scenario in progress are
+// kept in <out.json>.partial.json, so --resume also continues a scenario
+// that was interrupted.
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { makeConfig, teamSize } from '../src/rules/index.js';
@@ -61,16 +63,33 @@ function chunkSize(bot) {
   return 2;
 }
 
+const resume = process.argv.includes('--resume');
+const partialPath = `${outPath}.partial.json`;
+
+/** Finished jobs of scenario `id` from an interrupted run: { [jobIndex]: records }. */
+function loadPartial(id, size) {
+  if (!resume || !existsSync(partialPath)) return {};
+  const p = JSON.parse(readFileSync(partialPath, 'utf8'));
+  return p.id === id && p.size === size && p.games === games ? p.parts : {};
+}
+
 for (const sc of scenarios) {
   if (done.has(sc.id)) continue;
   const config = makeConfig(sc.config);
   const t0 = Date.now();
   const bot = sc.bot ?? defaultBot;
   const size = chunkSize(bot);
-  const parts = await runJobs(chunk(seedRange(1, games), size).map((seeds) => ({
-    type: 'games', config, bots: [bot, bot], seeds, maxTurns: 5000,
-  })));
-  const records = parts.flat();
+  const seedChunks = chunk(seedRange(1, games), size);
+  const parts = loadPartial(sc.id, size);
+  const todo = seedChunks.map((seeds, i) => ({ i, seeds })).filter(({ i }) => !parts[i]);
+  if (todo.length < seedChunks.length) console.log(`${sc.id}: continuing, ${seedChunks.length - todo.length}/${seedChunks.length} jobs already done`);
+  await runJobs(todo.map(({ seeds }) => ({ type: 'games', config, bots: [bot, bot], seeds, maxTurns: 5000 })), {
+    onResult: (k, result) => {
+      parts[todo[k].i] = result;
+      writeFileSync(partialPath, JSON.stringify({ id: sc.id, size, games, parts }));
+    },
+  });
+  const records = seedChunks.flatMap((_, i) => parts[i]);
   const summary = summarize(records, { teamSize: teamSize(config) });
   results.push({ id: sc.id, label: sc.label, group: sc.group ?? null, meta: sc.meta ?? null, bot, config, summary });
   const t = summary.turns;
@@ -78,6 +97,7 @@ for (const sc of scenarios) {
     + `min ${String(t.min).padStart(4)}  max ${String(t.max).padStart(5)}  first ${(100 * summary.firstPlayerWins.rate).toFixed(1)}%  `
     + `${((Date.now() - t0) / 1000).toFixed(0)}s`);
   save();
+  if (existsSync(partialPath)) unlinkSync(partialPath);
 }
 
 save();
