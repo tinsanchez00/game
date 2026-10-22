@@ -9,6 +9,10 @@
 //              that moves `unit` (any unit when null)
 //   campsite   { unit } when `drawn` was picked from the discard pile by a
 //              campsite landing; it moves `unit` forward
+//   lovers     { stage: 'move' } while the "line" Lovers' card move is
+//              resolving (rules.loversLine); then { stage: 'jump', unit }:
+//              `unit` (any of the player's units when null) may jump onto
+//              the ally it sees ahead in its lane (loversJumps)
 //   bonusTurn  set when a move earned another turn (rules.towerExtraTurn)
 
 import { HOME, geometry } from './board.js';
@@ -131,6 +135,7 @@ export function endTurn(state, extraTurn = false) {
     drawn: null,
     hanged: null,
     campsite: null,
+    lovers: null,
     bonusTurn: false,
     current: keep ? state.current : otherPlayer(state.current),
   };
@@ -162,7 +167,72 @@ export function continueTurn(state, landing = null) {
   if (done.hanged?.stage === 'back') {
     return { ...done, hanged: { stage: 'forward', unit: done.hanged.unit } };
   }
+  if (done.lovers?.stage === 'move') {
+    return startLoversJump(done, landing?.unit ?? state.campsite?.unit ?? null);
+  }
   return endTurn(done);
+}
+
+// --- the "line" Lovers jump ---------------------------------------------------
+
+/** Last path position of the lane holding `pos` (start, middle or end lane), or null. */
+function laneEnd(g, pos) {
+  if (!g.isOnBoard(pos)) return null;
+  if (pos < g.middleFirst) return g.middleFirst - 1;
+  if (pos <= g.middleLast) return g.middleLast;
+  return g.pathLength;
+}
+
+/**
+ * Where unit `unitId` can jump: the first occupied cell ahead of it in its
+ * lane, if that cell holds only the owner's units and has room. Else null.
+ */
+export function loversJumpTarget(state, unitId, occ = occupancy(state)) {
+  const g = geometry(state.config);
+  const unit = getUnit(state, unitId);
+  const end = laneEnd(g, unit.pos);
+  if (end === null) return null;
+  const me = unit.player;
+  for (let q = unit.pos + 1; q <= end; q += 1) {
+    const c = g.cellIndex(me, q);
+    const mine = occ[me][c];
+    const theirs = occ[otherPlayer(me)][c];
+    if (mine + theirs === 0) continue;
+    return theirs === 0 && mine < state.config.maxPerCell ? q : null;
+  }
+  return null;
+}
+
+/** Jumps available now: [{ unit, to }] (to: path position). */
+export function loversJumps(state) {
+  if (state.lovers?.stage !== 'jump') return [];
+  const occ = occupancy(state);
+  const out = [];
+  for (const u of state.units) {
+    if (u.player !== state.current) continue;
+    if (state.lovers.unit !== null && u.id !== state.lovers.unit) continue;
+    const to = loversJumpTarget(state, u.id, occ);
+    if (to !== null) out.push({ unit: u.id, to });
+  }
+  return out;
+}
+
+/** Enters the jump stage for `unit` (null: any unit); ends the turn when no jump exists. */
+export function startLoversJump(state, unit) {
+  const next = { ...state, drawn: null, lovers: { stage: 'jump', unit } };
+  return loversJumps(next).length > 0 ? next : endTurn(next);
+}
+
+/** Makes one of loversJumps(state), or skips it (null); the turn then ends. */
+export function playLoversJump(state, jump = null) {
+  if (state.winner !== null) throw new Error('playLoversJump: the game is over');
+  if (state.lovers?.stage !== 'jump') throw new Error('playLoversJump: no Lovers jump is pending');
+  if (jump === null) return endTurn(state);
+  if (!loversJumps(state).some((j) => j.unit === jump.unit && j.to === jump.to)) {
+    throw new Error('playLoversJump: invalid jump');
+  }
+  const units = state.units.map((u) => (u.id === jump.unit ? { ...u, pos: jump.to } : u));
+  return endTurn({ ...state, units });
 }
 
 /**
@@ -194,7 +264,7 @@ export function applyLegalMove(state, move, steps) {
     }
   }
   if (won) {
-    return { ...state, units, drawn: null, hanged: null, campsite: null, bonusTurn: false, winner: player };
+    return { ...state, units, drawn: null, hanged: null, campsite: null, lovers: null, bonusTurn: false, winner: player };
   }
 
   const towerTurn = state.config.rules.towerExtraTurn && !backward && g.isTower(target);

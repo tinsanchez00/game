@@ -46,6 +46,7 @@ export const DEFAULT_CONFIG = deepFreeze({
     escort: true, // false: commanders always move alone
     towersProtect: true, // false: towers are plain cells for captures and the Hermit
     towerExtraTurn: false, // true: landing on a tower with a number card gives another turn
+    loversLine: false, // true: the Lovers moves a unit by the card, then it may jump to an ally ahead in its lane
   },
 });
 

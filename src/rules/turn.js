@@ -14,13 +14,16 @@
 //     (state.campsite), resolved the same way;
 //   - the Hanged Man resolves its first card backward (hanged.stage 'back'),
 //     then waits for drawCard: that card moves the same unit forward
-//     (hanged.stage 'forward').
+//     (hanged.stage 'forward');
+//   - the "line" Lovers (rules.loversLine) resolves the card as a normal move
+//     (lovers.stage 'move'), then offers loversJumps / playLoversJump
+//     (lovers.stage 'jump').
 // The turn is over when state.current changes, or for an extra turn when
-// drawn, hanged and campsite are all null again.
+// drawn, hanged, campsite and lovers are all null again.
 
 import { JOKER, POWERS, isNumberCard } from './cards.js';
 import { DUD, POWER_TIMINGS } from './config.js';
-import { continueTurn, endTurn, legalMoves, playNumberCard } from './moves.js';
+import { continueTurn, endTurn, legalMoves, playNumberCard, startLoversJump } from './moves.js';
 import { applyPower, powerChoices } from './powers.js';
 import { shuffle } from './random.js';
 
@@ -126,7 +129,7 @@ export function passJoker(state) {
 export function canUsePower(state) {
   if (state.winner !== null || !state.config.powers) return false;
   const power = state.held[state.current];
-  if (!power || power === DUD || state.hanged || state.campsite) return false;
+  if (!power || power === DUD || state.hanged || state.campsite || state.lovers) return false;
   if (state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW) return state.drawn === null;
   if (state.drawn === null) return false;
   // After draw, the Hanged Man needs a backward move for a drawn number card.
@@ -152,6 +155,8 @@ export function powerUseChoices(state) {
  * The Hanged Man is free: the turn's card is then resolved moving backward
  * (drawn first with the before-draw timing; if that card has no backward
  * move the turn ends), and a second card moves the same unit forward.
+ * The "line" Lovers is free too: the card moves a unit as usual, then the
+ * jump stage follows (moves.js).
  */
 export function usePower(state, args = {}) {
   if (!canUsePower(state)) throw new Error('usePower: no power can be used now');
@@ -165,6 +170,14 @@ export function usePower(state, args = {}) {
   if (power === POWERS.HANGED_MAN) {
     const backward = { ...used, hanged: { stage: 'back', unit: null } };
     return state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? drawCard(backward) : backward;
+  }
+  if (power === POWERS.LOVERS && state.config.rules.loversLine) {
+    const s = state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? drawCard(used) : used;
+    // A number card with a move is played as usual; otherwise the card is spent and any unit may jump.
+    if (isNumberCard(s.drawn) && legalMoves(s, player, s.drawn).length > 0) {
+      return { ...s, lovers: { stage: 'move' } };
+    }
+    return startLoversJump(s, null);
   }
   return endTurn(used);
 }

@@ -31,7 +31,7 @@ function unitsAt(fs, q) {
 export function powerTargets(fs, p, k) {
   const out = [];
   const seen = new Set();
-  if (k === LOVERS && fs.maxPerCell >= 2) {
+  if (k === LOVERS && fs.maxPerCell >= 2 && !fs.loversLine) {
     for (let u = 0; u < fs.n; u += 1) {
       if (fs.owner[u] !== p || !shared(fs, fs.pos[u])) continue;
       for (let t = 0; t < fs.n; t += 1) {
@@ -69,7 +69,7 @@ function move(fs, rec, i, t) {
  */
 export function applyPower(fs, p, k, target) {
   const rec = { p, k, moved: [], prevHeld: fs.held[p] };
-  if (k === LOVERS && target.length === 2) {
+  if (k === LOVERS && target.length === 2 && !fs.loversLine) {
     move(fs, rec, target[0], fs.pos[target[1]]);
   } else if (k === DEVIL && target.length === 1) {
     const c = fs.pos[target[0]];

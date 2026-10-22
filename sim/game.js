@@ -6,7 +6,7 @@
 
 import {
   CARD_IDS, HOME, canUsePower, createGame, currentMoves, drawCard, geometry,
-  isNumberCard, mustPassJoker, passJoker, playDraft, playDrawnNumber, teamSize, usePower,
+  isNumberCard, mustPassJoker, passJoker, playDraft, playDrawnNumber, playLoversJump, teamSize, usePower,
 } from '../src/rules/index.js';
 
 function progress(state, p, A) {
@@ -21,6 +21,7 @@ function blankPowerStats() {
     enemyProgressLost: 0, ownProgressLost: 0, swing: 0, usedBy: [0, 0],
     heldTurns: 0, // turns started holding this card
     discarded: 0, // held, then replaced unused by a different card at a Joker draft
+    jumped: 0, // "line" Lovers uses that ended with a jump
   }]));
 }
 
@@ -64,7 +65,7 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
   const campsiteCards = [0, 0]; // cards picked from the discard pile by campsite landings
   const diffs = [];
   let turns = 0;
-  let hangedStart = null; // state before a Hanged Man use, until its move resolves
+  let pending = null; // { id, before } for a free power (Hanged Man, "line" Lovers) until its turn resolves
 
   // How much choice each turn offered (act bots only): no choice (one option
   // at most), one sensible option, or a real choice between sensible options.
@@ -117,7 +118,7 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
 
   while (s.winner === null && turns < maxTurns) {
     const p = s.current;
-    const startOfTurn = s.drawn === null && !s.hanged && !s.campsite;
+    const startOfTurn = s.drawn === null && !s.hanged && !s.campsite && !s.lovers;
     if (startOfTurn) {
       turns += 1;
       turnsBy[p] += 1;
@@ -127,7 +128,9 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
     }
 
     let a = null;
-    if (s.drawn === null) {
+    if (s.lovers?.stage === 'jump') {
+      a = act(p, s);
+    } else if (s.drawn === null) {
       if (canUsePower(s)) a = act(p, s);
       if (!a || a.kind === 'draw') {
         s = drawCard(s);
@@ -155,13 +158,16 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
       powersUsed[p] += 1;
       s = usePower(s, a.args);
       if (before.drawn === null && s.drawn !== null && !isNumberCard(s.drawn)) jokers[p] += 1;
-      if (id === 'hanged-man') hangedStart = before;
+      if (id === 'hanged-man' || (id === 'lovers' && s.config.rules.loversLine)) pending = { id, before };
       else recordPowerEffect(p, id, before, s);
     } else if (a.kind === 'move') {
       s = playDrawnNumber(s, a.move);
       recordMove(p, before, s);
+    } else if (a.kind === 'loversJump') {
+      if (a.jump) powers.lovers.jumped += 1;
+      s = playLoversJump(s, a.jump);
     } else if (a.kind === 'pass') {
-      if (!before.hanged && !before.campsite) wasted[p] += 1;
+      if (!before.hanged && !before.campsite && !before.lovers) wasted[p] += 1;
       s = playDrawnNumber(s, null);
     } else if (a.kind === 'draft') {
       const kept = s.powerDeck[a.index];
@@ -170,7 +176,7 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
       if (old && old !== kept) powers[old].discarded += 1;
       s = playDraft(s, a.index);
     } else if (a.kind === 'passJoker') {
-      if (!before.hanged && !before.campsite) wasted[p] += 1;
+      if (!before.hanged && !before.campsite && !before.lovers) wasted[p] += 1;
       s = passJoker(s);
     } else {
       throw new Error(`playGame: unknown action ${a.kind}`);
@@ -178,12 +184,12 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
 
     if (s.campsite && s.campsite !== before.campsite) campsiteCards[p] += 1;
 
-    // A Hanged Man use is measured once its card has been resolved.
-    if (hangedStart && !s.hanged) {
-      recordPowerEffect(p, 'hanged-man', hangedStart, s);
-      hangedStart = null;
+    // A free power use is measured once its turn has been resolved.
+    if (pending && !s.hanged && !s.lovers) {
+      recordPowerEffect(p, pending.id, pending.before, s);
+      pending = null;
     }
-    if (s.winner === null && s.current === p && s.drawn === null && !s.hanged && !s.campsite) extraTurns[p] += 1;
+    if (s.winner === null && s.current === p && s.drawn === null && !s.hanged && !s.campsite && !s.lovers) extraTurns[p] += 1;
     if (s.drawn === null) diffs.push(progress(s, 0, A) - progress(s, 1, A));
   }
 

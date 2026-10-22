@@ -41,7 +41,7 @@ function devilChoices(state, player) {
 export function powerChoices(state, player, power) {
   switch (power) {
     case POWERS.LOVERS:
-      return loversChoices(state, player);
+      return state.config.rules.loversLine ? [] : loversChoices(state, player);
     case POWERS.DEVIL:
       return devilChoices(state, player);
     case POWERS.HANGED_MAN:
@@ -123,7 +123,7 @@ export function applyPower(state, player, power, args = {}) {
     case POWERS.HANGED_MAN:
       return state;
     case POWERS.LOVERS:
-      return args.unit ? lovers(state, args) : state;
+      return args.unit && !state.config.rules.loversLine ? lovers(state, args) : state;
     case POWERS.DEVIL:
       return args.unit ? devil(state, args) : state;
     case POWERS.TOWER:

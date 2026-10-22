@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as R from '../src/rules/index.js';
-import { apply, buildFast, cardModeOf, discardCounts, genMoves, undo } from '../sim/fast.js';
+import { apply, buildFast, cardModeOf, discardCounts, genMoves, loversTarget, undo } from '../sim/fast.js';
 import { applyPower, powerTargets, undoPower } from '../sim/fastpowers.js';
 import { powerBot } from '../sim/powerbot.js';
 import { greedyBot, randomBot, searchBot } from '../sim/bot.js';
@@ -369,4 +369,38 @@ test('a held power replaced at a Joker draft by a different card counts as disca
     heldDevil += r.powers.devil.heldTurns;
   }
   assert.ok(heldDevil > 0 && discarded > 0, `held ${heldDevil}, discarded ${discarded}`);
+});
+
+test('fast "line" Lovers jump targets match the engine', () => {
+  const random = rng(987);
+  let checked = 0;
+  for (let n = 0; n < 400; n += 1) {
+    const s = randomPosition({ powers: false, rules: { loversLine: true } }, random);
+    if (s.winner !== null) continue;
+    const fs = buildFast(s);
+    s.units.forEach((u, i) => {
+      const want = R.loversJumpTarget(s, u.id);
+      assert.equal(loversTarget(fs, i), want === null ? -1 : want, `unit ${u.id}`);
+      if (want !== null) checked += 1;
+    });
+  }
+  assert.ok(checked > 100, `checked ${checked}`);
+});
+
+test('power bots play full games with the "line" Lovers', () => {
+  let jumped = 0;
+  let used = 0;
+  for (const level of ['average', 'strong-v1']) {
+    for (const seed of [1, 2]) {
+      const r = playGame({
+        config: { soldiers: 3, powerDeck: ['lovers', 'lovers', 'lovers', 'dud'], rules: { loversLine: true } },
+        seed,
+        bots: [powerBot({ level, random: rng(seed) }), powerBot({ level, random: rng(seed + 3) })],
+      });
+      assert.ok(r.finished);
+      jumped += r.powers.lovers.jumped;
+      used += r.powers.lovers.used;
+    }
+  }
+  assert.ok(used > 0 && jumped > 0, `used ${used}, jumped ${jumped}`);
 });

@@ -55,6 +55,7 @@ export function buildFast(state) {
     escort: config.rules.escort,
     protect: config.rules.towersProtect,
     towerTurn: config.rules.towerExtraTurn,
+    loversLine: config.rules.loversLine,
     current: state.current,
     bonus: state.bonusTurn ? 1 : 0, // extra turns earned so far this turn
     values,
@@ -213,6 +214,26 @@ export function undo(fs, rec) {
   }
   lift(fs, rec.u);
   place(fs, rec.u, rec.from);
+}
+
+/**
+ * "Line" Lovers jump target for unit i: the first occupied cell ahead in its
+ * lane (start, middle or end), when it holds only the owner's units and has
+ * room. Returns the path position, or -1.
+ */
+export function loversTarget(fs, i) {
+  const from = fs.pos[i];
+  if (from === HOME || from === fs.A) return -1;
+  const end = from < fs.middleFirst ? fs.middleFirst - 1 : from <= fs.middleLast ? fs.middleLast : fs.L;
+  const p = fs.owner[i];
+  for (let q = from + 1; q <= end; q += 1) {
+    const c = fs.cellIdx[p][q];
+    const mine = fs.occ[p][c];
+    const theirs = fs.occ[1 - p][c];
+    if (mine + theirs === 0) continue;
+    return theirs === 0 && mine < fs.maxPerCell ? q : -1;
+  }
+  return -1;
 }
 
 /** Probability of each card slot for player p's next draw (index J = joker). */
