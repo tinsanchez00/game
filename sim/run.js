@@ -2,13 +2,15 @@
 //
 // Usage: node sim/run.js <scenarios.mjs> <out.json> [--games N] [--depth D]
 //                        [--weights '{"tower":2}'] [--only id1,id2]
-//                        [--bot '{"kind":"power","level":"strong"}']
+//                        [--bot '{"kind":"power","level":"strong"}'] [--resume]
 //
 // <scenarios.mjs> default-exports [{ id, label, group?, meta?, bot?, config }].
 // Every scenario plays the same seeds (1..N) with the same bot on both sides:
 // the scenario's own `bot`, else --bot, else a search bot of --depth.
+// The output file is rewritten after every scenario; --resume skips the
+// scenarios it already holds.
 
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { makeConfig, teamSize } from '../src/rules/index.js';
@@ -35,13 +37,36 @@ const { default: all } = await import(pathToFileURL(resolve(scenarioPath)).href)
 const scenarios = only ? all.filter((s) => only.includes(s.id)) : all;
 const defaultBot = arg('bot', null) ? JSON.parse(arg('bot')) : { kind: 'search', depth, weights };
 
-const results = [];
+const results = process.argv.includes('--resume') && existsSync(outPath)
+  ? JSON.parse(readFileSync(outPath, 'utf8')).results
+  : [];
+const done = new Set(results.map((r) => r.id));
 const started = Date.now();
+
+function save() {
+  writeFileSync(outPath, JSON.stringify({
+    generated: new Date().toISOString(),
+    gamesPerScenario: games,
+    bot: defaultBot,
+    seconds: Math.round((Date.now() - started) / 1000),
+    results,
+  }, null, 1));
+}
+
+/** Seeds per job: small for slow (deep) bots so both threads stay busy. */
+function chunkSize(bot) {
+  if (bot.kind !== 'power') return 50;
+  if (bot.level === 'average-v1') return 50;
+  if (bot.level === 'strong-v1') return 10;
+  return 2;
+}
+
 for (const sc of scenarios) {
+  if (done.has(sc.id)) continue;
   const config = makeConfig(sc.config);
   const t0 = Date.now();
   const bot = sc.bot ?? defaultBot;
-  const size = bot.kind === 'power' && bot.level !== 'average' ? 10 : 50;
+  const size = chunkSize(bot);
   const parts = await runJobs(chunk(seedRange(1, games), size).map((seeds) => ({
     type: 'games', config, bots: [bot, bot], seeds, maxTurns: 5000,
   })));
@@ -52,13 +77,8 @@ for (const sc of scenarios) {
   console.log(`${sc.id.padEnd(22)} mean ${t.mean.toFixed(1).padStart(6)}  median ${String(t.median).padStart(5)}  `
     + `min ${String(t.min).padStart(4)}  max ${String(t.max).padStart(5)}  first ${(100 * summary.firstPlayerWins.rate).toFixed(1)}%  `
     + `${((Date.now() - t0) / 1000).toFixed(0)}s`);
+  save();
 }
 
-writeFileSync(outPath, JSON.stringify({
-  generated: new Date().toISOString(),
-  gamesPerScenario: games,
-  bot: defaultBot,
-  seconds: Math.round((Date.now() - started) / 1000),
-  results,
-}, null, 1));
+save();
 console.log(`wrote ${outPath}`);

@@ -8,7 +8,6 @@ import {
   HOME, POWER_IDS, canUsePower, createGame, currentMoves, drawCard, geometry,
   isNumberCard, mustPassJoker, passJoker, playDraft, playDrawnNumber, teamSize, usePower,
 } from '../src/rules/index.js';
-import { assertSimSupported } from './fast.js';
 
 function progress(state, p, A) {
   let s = 0;
@@ -45,7 +44,6 @@ function changed(before, after) {
  */
 export function playGame({ config, seed, bots, maxTurns = 5000 }) {
   let s = createGame({ seed, config });
-  assertSimSupported(s.config);
   const A = geometry(s.config).ascended;
   const size = teamSize(s.config);
   const first = s.current;
@@ -61,6 +59,7 @@ export function playGame({ config, seed, bots, maxTurns = 5000 }) {
   const powersUsed = [0, 0];
   const commanderOut = [null, null];
   const powers = blankPowerStats();
+  const campsiteCards = [0, 0]; // cards picked from the discard pile by campsite landings
   const diffs = [];
   let turns = 0;
   let hangedStart = null; // state before a Hanged Man use, until its move resolves
@@ -151,6 +150,8 @@ export function playGame({ config, seed, bots, maxTurns = 5000 }) {
       throw new Error(`playGame: unknown action ${a.kind}`);
     }
 
+    if (s.campsite && s.campsite !== before.campsite) campsiteCards[p] += 1;
+
     // A Hanged Man use is measured once its card has been resolved.
     if (hangedStart && !s.hanged) {
       recordPowerEffect(p, 'hanged-man', hangedStart, s);
@@ -164,7 +165,7 @@ export function playGame({ config, seed, bots, maxTurns = 5000 }) {
   const record = {
     seed, first, winner, finished: winner !== null, turns, turnsBy,
     captured, captureMoves, multiCaptures, wasted, jokers, extraTurns,
-    commanderOut, powerKills, powersUsed, powers, teamSize: size,
+    commanderOut, powerKills, powersUsed, powers, campsiteCards, teamSize: size,
   };
   if (winner === null) return record;
 

@@ -13,7 +13,7 @@
 
 import { HOME, JOKER, currentMoves, getUnit } from '../src/rules/index.js';
 import {
-  apply, buildFast, drawCounts, genMoves, isLocked, returnCard, takeCard, undo,
+  apply, buildFast, cardModeOf, drawCounts, genMoves, isLocked, returnCard, takeCard, undo,
 } from './fast.js';
 
 export const DEFAULT_WEIGHTS = Object.freeze({
@@ -160,6 +160,7 @@ export function searchBot({ depth = 2, weights = DEFAULT_WEIGHTS } = {}) {
     choose(state) {
       if (state.hanged) throw new Error('searchBot: backward moves are not supported');
       const fs = buildFast(state);
+      if (fs.hasCamp) throw new Error('searchBot: campsites are not modelled (use sim/powerbot.js)');
       const ctx = { w, endOdds: endWaitTable(fs) };
       const d = state.drawn;
       const me = state.current;
@@ -195,7 +196,8 @@ export function randomBot(random) {
     name: 'random',
     choose(state) {
       const fs = buildFast(state);
-      const moves = genMoves(fs, state.current, state.drawn);
+      const { back, only } = cardModeOf(fs, state);
+      const moves = genMoves(fs, state.current, state.drawn, back, only);
       if (moves.length === 0) return null;
       return toEngineMove(fs, moves[Math.floor(random() * moves.length)]);
     },
@@ -209,12 +211,13 @@ export function greedyBot() {
     choose(state) {
       const fs = buildFast(state);
       const me = state.current;
-      const moves = genMoves(fs, me, state.drawn);
+      const { back, only } = cardModeOf(fs, state);
+      const moves = genMoves(fs, me, state.drawn, back, only);
       if (moves.length === 0) return null;
       let best = -Infinity;
       let bestMove = moves[0];
       for (const m of moves) {
-        const rec = apply(fs, m[0], m[1], state.drawn);
+        const rec = apply(fs, m[0], m[1], state.drawn, back);
         let v = 0;
         for (let i = 0; i < fs.n; i += 1) v += fs.owner[i] === me ? fs.pos[i] : -fs.pos[i];
         if (rec.won) v = WIN;

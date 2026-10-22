@@ -3,35 +3,27 @@
 // Real games are always played through src/rules; this module only lets a
 // bot try moves and undo them quickly. tests/sim.test.js checks that its
 // move generation and move results match the engine on random positions.
-// Supports number-card moves (forward, or backward) and, in fastpowers.js,
-// the power effects. Not modelled yet: campsites and the Hanged Man's
-// back-then-forward turn; settings that use them are rejected.
+// Supports number-card moves (forward or backward, optionally limited to one
+// unit), campsite cells and, in fastpowers.js, the power effects. Turn flow
+// across several cards (campsite cards, the Hanged Man's forward card) lives
+// in the bots (sim/powerbot.js).
 
 import { HOME, JOKER, POWER_IDS, geometry, otherPlayer } from '../src/rules/index.js';
 
-/** Throws for settings the simulator can't play faithfully yet. */
-export function assertSimSupported(config) {
-  if (config.board.campsites.length > 0) {
-    throw new Error('sim: campsites are not modelled yet (use board.campsites: [])');
-  }
-  if (config.powers && config.powerDeck.includes('hanged-man')) {
-    throw new Error('sim: the Hanged Man is not modelled yet (leave it out of powerDeck)');
-  }
-}
-
 export function buildFast(state) {
   const config = state.config;
-  assertSimSupported(config);
   const g = geometry(config);
   const n = state.units.length;
   const A = g.ascended;
 
   const cellIdx = [new Int16Array(A + 1), new Int16Array(A + 1)];
   const tower = new Uint8Array(A + 1);
+  const camp = new Uint8Array(A + 1);
   for (let p = 0; p <= A; p += 1) {
     cellIdx[0][p] = g.cellIndex(0, p);
     cellIdx[1][p] = g.cellIndex(1, p);
     tower[p] = g.isTower(p) ? 1 : 0;
+    camp[p] = g.isCampsite(p) ? 1 : 0;
   }
 
   const values = [...new Set(config.moveDeck.filter((c) => c !== JOKER))].sort((a, b) => a - b);
@@ -55,6 +47,8 @@ export function buildFast(state) {
     remaining: [0, 0],
     cellIdx,
     tower,
+    camp,
+    hasCamp: g.campsites.length > 0,
     maxPerCell: config.maxPerCell,
     exact: config.rules.exactAscend,
     lockRule: config.rules.commanderLock,
@@ -62,6 +56,7 @@ export function buildFast(state) {
     protect: config.rules.towersProtect,
     towerTurn: config.rules.towerExtraTurn,
     current: state.current,
+    bonus: state.bonusTurn ? 1 : 0, // extra turns earned so far this turn
     values,
     J,
     fullCounts,
@@ -122,14 +117,16 @@ function canLand(fs, p, t, count) {
 /**
  * Distinct legal moves for player p with a card worth d, as [unit, escort]
  * pairs (escort -1 = none). Units of the same type on the same cell are
- * interchangeable, so only one of them is listed.
+ * interchangeable, so only one of them is listed. `only` >= 0 limits the
+ * moves to that unit (campsite card, Hanged Man forward card).
  */
-export function genMoves(fs, p, d, back = false) {
+export function genMoves(fs, p, d, back = false, only = -1) {
   const out = [];
   const seen = new Set();
   const locked = isLocked(fs, p);
   for (let i = 0; i < fs.n; i += 1) {
     if (fs.owner[i] !== p) continue;
+    if (only >= 0 && i !== only) continue;
     if (fs.cmd[i] && locked) continue;
     const t = dest(fs, i, d, back);
     if (t < 0) continue;
@@ -197,10 +194,9 @@ export function apply(fs, u, e, d, back = false) {
     }
   }
   const prevCurrent = fs.current;
-  // A backward (Hanged Man) move is followed by another turn, as is landing
-  // on a tower with the extra-turn rule.
-  fs.current = back || (fs.towerTurn && fs.tower[t]) ? p : o;
-  return { u, e, from, captured, prevCurrent, won: fs.remaining[p] === 0 };
+  // Landing on a tower with the extra-turn rule keeps the turn (forward moves).
+  fs.current = !back && fs.towerTurn && fs.tower[t] ? p : o;
+  return { u, e, from, t, captured, prevCurrent, won: fs.remaining[p] === 0 };
 }
 
 export function undo(fs, rec) {
@@ -223,6 +219,33 @@ export function drawCounts(fs, p) {
   return fs.totals[p] > 0
     ? { counts: fs.counts[p], total: fs.totals[p], full: false }
     : { counts: fs.fullCounts, total: fs.fullTotal, full: true };
+}
+
+/**
+ * Card slots in p's discard pile: the full deck minus the draw pile (the
+ * engine reshuffles every card). A bot that doesn't count cards sees a full
+ * draw pile, so its discard comes out empty: it then assumes the full deck.
+ */
+export function discardCounts(fs, p) {
+  const counts = new Int16Array(fs.J + 1);
+  let total = 0;
+  for (let k = 0; k <= fs.J; k += 1) {
+    counts[k] = fs.fullCounts[k] - fs.counts[p][k];
+    total += counts[k];
+  }
+  return total > 0 ? { counts, total } : { counts: fs.fullCounts, total: fs.fullTotal };
+}
+
+/**
+ * How the engine's current card moves units, in fast-copy terms:
+ * { back, only } (only = unit index or -1).
+ */
+export function cardModeOf(fs, state) {
+  const idx = (id) => (id ? fs.ids.indexOf(id) : -1);
+  if (state.campsite) return { back: false, only: idx(state.campsite.unit) };
+  if (state.hanged?.stage === 'back') return { back: true, only: -1 };
+  if (state.hanged?.stage === 'forward') return { back: false, only: idx(state.hanged.unit) };
+  return { back: false, only: -1 };
 }
 
 /** Removes one card of slot k from p's pile (reshuffling first if empty). */

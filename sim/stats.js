@@ -66,6 +66,7 @@ export function summarize(records, { teamSize, histWidth = 10 } = {}) {
     wastedShare: sum((r) => r.wasted[0] + r.wasted[1]) / sum((r) => r.turns),
     jokerShare: sum((r) => r.jokers[0] + r.jokers[1]) / sum((r) => r.turns),
     extraTurns: sum((r) => r.extraTurns[0] + r.extraTurns[1]) / done.length,
+    campsiteCards: sum((r) => (r.campsiteCards ? r.campsiteCards[0] + r.campsiteCards[1] : 0)) / done.length,
     leadChanges: describe(done.map((r) => r.leadChanges)),
     winnerMaxDeficit: describe(done.map((r) => r.maxDeficit)),
     leaderAtHalfWins: rate(half.filter((r) => r.leaderAtHalfWon).length, half.length),
