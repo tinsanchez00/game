@@ -83,6 +83,10 @@ function botAction(m, pick, used) {
       if (ix.canConfirm) return { type: 'confirm' };
       if (ix.options.length) return { type: 'option', value: any(ix.options) };
       return { type: 'tap', key: any(ix.tappable) };
+    case 'loversJump':
+      if (ix.canConfirm) return pick(3) === 0 ? { type: 'stay' } : { type: 'confirm' };
+      if (ix.options.length) return { type: 'option', value: any(ix.options) };
+      return { type: 'tap', key: any(ix.tappable) };
     default:
       throw new Error(`bot: unexpected phase ${ix.phase}`);
   }
@@ -107,7 +111,8 @@ test('bots can play complete games through the screen without errors', () => {
   const used = new Set();
   for (let seed = 1; seed <= 30; seed += 1) {
     const pick = makeRandom(seed * 7919);
-    const config = { powerTiming: seed % 2 ? 'afterDraw' : 'beforeDraw' };
+    // Every third game uses the earlier, pairing Lovers.
+    const config = { powerTiming: seed % 2 ? 'afterDraw' : 'beforeDraw', rules: { loversLine: seed % 3 !== 0 } };
     let m = initModel(R.createGame({ seed, config }));
     let steps = 0;
     while (m.game.winner === null) {
@@ -127,7 +132,7 @@ test('bots can play complete games through the screen without errors', () => {
     assert.ok(view(m).includes('overlay'));
     assert.ok(m.game.units.filter((u) => u.player === m.game.winner).every((u) => u.pos === R.ASCENDED));
   }
-  for (const phase of ['handoff', 'draw', 'move', 'stuck', 'joker', 'draft', 'lovers', 'devil', 'campsite card', 'hanged forward']) {
+  for (const phase of ['handoff', 'draw', 'move', 'stuck', 'joker', 'draft', 'lovers', 'loversJump', 'devil', 'campsite card', 'hanged forward']) {
     assert.ok(seen.has(phase), `phase ${phase} never came up`);
   }
   for (const power of Object.values(R.POWERS)) assert.ok(used.has(power), `${power} never used`);
@@ -275,4 +280,67 @@ test("both players' discard piles are shown face up, outside the board", () => {
   assert.ok(html.includes('Obsidian&#39;s discard pile: 3'));
   const board = html.slice(html.indexOf('class="board"'), html.indexOf('</section>', html.indexOf('class="board"')));
   assert.ok(!board.includes('discard'), 'not on the board');
+});
+
+// --- the Lovers jump ------------------------------------------------------------------
+
+/** Gold holds the Lovers, has drawn the first card of `deck` and used the power. */
+function loversModel(positions, deck = [3, 1]) {
+  let m = modelWith(positions, {
+    held: [R.POWERS.LOVERS, null],
+    moveDecks: [{ draw: deck, discard: [] }, { draw: [1], discard: [] }],
+  });
+  m = update(m, { type: 'draw' });
+  return update(m, { type: 'use-power' });
+}
+
+test('the Lovers: the card moves as usual, then a line, Jump and Stay offer the jump', () => {
+  let m = loversModel({ 'p0-s1': 4, 'p0-s2': 10 });
+  assert.equal(interactions(m).phase, 'move');
+  assert.match(view(m), /The Lovers · move a unit 3 forward/);
+  m = update(m, { type: 'tap', key: unitKey(m.game, R.getUnit(m.game, 'p0-s1')) });
+  m = update(m, { type: 'confirm' });
+  const ix = interactions(m);
+  assert.equal(ix.phase, 'loversJump');
+  assert.equal(ix.lines.length, 1);
+  assert.ok(ix.canConfirm);
+  assert.equal(ix.dest, R.cellId(0, 10));
+  const html = view(m);
+  assert.match(html, /class="jump-line on"/);
+  assert.match(html, /data-action="confirm"[^>]*>Jump</);
+  assert.match(html, /data-action="stay"[^>]*>Stay</);
+  const jumped = update(m, { type: 'confirm' });
+  assert.equal(R.getUnit(jumped.game, 'p0-s1').pos, 10);
+  assert.equal(interactions(jumped).phase, 'handoff');
+  const tapped = update(m, { type: 'tap', key: ix.dest });
+  assert.equal(R.getUnit(tapped.game, 'p0-s1').pos, 10);
+  const stayed = update(m, { type: 'stay' });
+  assert.equal(R.getUnit(stayed.game, 'p0-s1').pos, 7);
+  assert.equal(interactions(stayed).phase, 'handoff');
+});
+
+test('the Lovers with a card that has no move: pick which unit jumps, then Jump', () => {
+  // Soldier and commander share cell 13 and both see the soldier on 14; a 4 can't be played.
+  const base = R.createGame({ seed: 3, firstPlayer: 0, config: { soldiers: 2 } });
+  const pos = { 'p0-s1': 13, 'p0-c1': 13, 'p0-s2': 14 };
+  let m = initModel({
+    ...base,
+    held: [R.POWERS.LOVERS, null],
+    units: base.units.map((u) => (u.id in pos ? { ...u, pos: pos[u.id] } : u)),
+    moveDecks: [{ draw: [4, 1], discard: [] }, { draw: [1], discard: [] }],
+  });
+  m = update(update(m, { type: 'draw' }), { type: 'use-power' });
+  let ix = interactions(m);
+  assert.equal(ix.phase, 'loversJump');
+  assert.ok(!ix.canConfirm);
+  assert.match(view(m), /data-action="confirm" disabled/);
+  m = update(m, { type: 'tap', key: R.cellId(0, 13) });
+  assert.deepEqual(interactions(m).options.sort(), ['commander', 'soldier']);
+  m = update(m, { type: 'option', value: 'commander' });
+  ix = interactions(m);
+  assert.ok(ix.canConfirm);
+  assert.equal(ix.dest, R.cellId(0, 14));
+  m = update(m, { type: 'confirm' });
+  assert.equal(R.getUnit(m.game, 'p0-c1').pos, 14);
+  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 13);
 });

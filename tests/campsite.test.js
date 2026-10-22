@@ -130,7 +130,7 @@ test('a Hanged Man forward move onto the campsite triggers it', () => {
 });
 
 test('powers that move a unit onto the campsite do not trigger it', () => {
-  const lovers = usePower(drawing({ 'p0-s1': 10, 'p0-s2': 5 }, { held: [POWERS.LOVERS, null] }), { unit: 'p0-s1', target: 'p0-s2' });
+  const lovers = usePower(drawing({ 'p0-s1': 10, 'p0-s2': 5 }, { held: [POWERS.LOVERS, null], config: { rules: { loversLine: false } } }), { unit: 'p0-s1', target: 'p0-s2' });
   assert.equal(pos(lovers, 'p0-s1'), 5);
   assert.equal(lovers.current, 1);
   assert.equal(lovers.campsite, null);

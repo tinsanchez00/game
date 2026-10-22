@@ -5,7 +5,7 @@ import { createGame } from '../rules/index.js';
 import { initModel, update } from './controller.js';
 import { view } from './view.js';
 
-const STORE_KEY = 'board-game-test-v4';
+const STORE_KEY = 'board-game-test-v5';
 
 function load() {
   try {

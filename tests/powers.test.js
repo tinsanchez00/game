@@ -7,6 +7,9 @@ import {
 } from '../src/rules/index.js';
 import { LOCK, gameWith, pos, soldiersOut } from './helpers.js';
 
+// The earlier Lovers (pairing), now a test setting.
+const PAIR = { rules: { loversLine: false } };
+
 /**
  * Player 0 holds `power` and has just drawn the first card of `deck`
  * (after-draw timing, so the power is usable now).
@@ -85,8 +88,8 @@ test('Hanged Man (after draw): it cannot be used on a number card with no backwa
   assert.ok(canUsePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 })));
 });
 
-test('Hanged Man (after draw): it can be used on a drawn joker wherever your units are', () => {
-  assert.ok(canUsePower(playing(POWERS.HANGED_MAN, {}, { deck: [JOKER, 2] })));
+test('Hanged Man (after draw): it can not be used on a drawn joker', () => {
+  assert.ok(!canUsePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 }, { deck: [JOKER, 2] })));
 });
 
 test('Hanged Man (before draw): a card with no backward move spends it and ends the turn', () => {
@@ -106,8 +109,14 @@ test('Hanged Man (before draw): a card with no backward move spends it and ends 
   assert.deepEqual(g.moveDecks[0].draw, [1], 'no forward card is drawn');
 });
 
-test('Hanged Man on a joker: draft, then the forward card is a normal move, then the turn ends', () => {
-  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 }, { deck: [JOKER, 2] }));
+test('Hanged Man (before draw) on a joker: draft, then the forward card is a normal move, then the turn ends', () => {
+  const base = gameWith({ 'p0-s1': 10 }, {
+    config: { powerTiming: 'beforeDraw' },
+    moveDecks: [{ draw: [JOKER, 2], discard: [] }, { draw: [1], discard: [] }],
+    held: [POWERS.HANGED_MAN, null],
+    powerDeck: [POWERS.TOWER, POWERS.HERMIT],
+  });
+  let g = usePower(base);
   assert.equal(g.drawn, JOKER);
   assert.deepEqual(draftOptions(g), [POWERS.TOWER, POWERS.HERMIT]);
   g = playDraft(g, 0);
@@ -191,15 +200,15 @@ test('Hanged Man: a backward move onto the campsite triggers it before the forwa
 
 // --- The Lovers ---
 
-test('Lovers: move your middle-lane unit onto a lone ally there', () => {
-  const g = playing(POWERS.LOVERS, { 'p0-s1': 5, 'p0-s2': 11 });
+test('Lovers (pairing): move your middle-lane unit onto a lone ally there', () => {
+  const g = playing(POWERS.LOVERS, { 'p0-s1': 5, 'p0-s2': 11 }, { config: PAIR });
   const after = usePower(g, { unit: 'p0-s1', target: 'p0-s2' });
   assert.equal(pos(after, 'p0-s1'), 11);
   assert.equal(after.current, 1);
 });
 
-test('Lovers works in either direction', () => {
-  const g = playing(POWERS.LOVERS, { 'p0-s1': 5, 'p0-s2': 11 });
+test('Lovers (pairing) works in either direction', () => {
+  const g = playing(POWERS.LOVERS, { 'p0-s1': 5, 'p0-s2': 11 }, { config: PAIR });
   const after = usePower(g, { unit: 'p0-s2', target: 'p0-s1' });
   assert.equal(pos(after, 'p0-s2'), 5);
 });
@@ -210,7 +219,7 @@ test('Lovers: the ally must be alone, in the middle lane, and yours', () => {
     'p0-s2': 9, 'p0-s3': 9, // a pair, not alone
     'p0-s4': 2, // private lane
     'p1-s1': 11, // enemy
-  });
+  }, { config: PAIR });
   const targets = new Set(powerUseChoices(g).map((c) => c.target));
   assert.deepEqual([...targets], ['p0-s1']); // the only lone ally in the middle lane
   assert.throws(() => usePower(g, { unit: 'p0-s1', target: 'p0-s2' }));
@@ -219,7 +228,7 @@ test('Lovers: the ally must be alone, in the middle lane, and yours', () => {
 });
 
 test('Lovers with no valid pair can still be used, to no effect', () => {
-  const g = playing(POWERS.LOVERS, { 'p0-s1': 5, 'p0-s4': 2 });
+  const g = playing(POWERS.LOVERS, { 'p0-s1': 5, 'p0-s4': 2 }, { config: PAIR });
   assert.deepEqual(powerUseChoices(g), [{}]);
   const after = usePower(g, {});
   assert.equal(pos(after, 'p0-s1'), 5);
@@ -228,7 +237,7 @@ test('Lovers with no valid pair can still be used, to no effect', () => {
 });
 
 test('Lovers: a commander in the middle lane can be moved while soldiers are home', () => {
-  const g = playing(POWERS.LOVERS, { 'p0-c1': 5, 'p0-s1': 11 }, { config: LOCK }); // soldiers still home
+  const g = playing(POWERS.LOVERS, { 'p0-c1': 5, 'p0-s1': 11 }, { config: { rules: { ...LOCK.rules, ...PAIR.rules } } }); // soldiers still home
   assert.ok(powerUseChoices(g).some((c) => c.unit === 'p0-c1'));
 });
 

@@ -35,6 +35,7 @@ export function phaseOf(m) {
   const g = m.game;
   if (g.winner !== null) return 'won';
   if (g.current !== m.ui.viewer) return 'handoff';
+  if (g.lovers?.stage === 'jump') return 'loversJump';
   if (m.ui.using && R.canUsePower(g)) return g.held[g.current];
   if (g.drawn === null) return 'draw';
   if (R.isNumberCard(g.drawn)) return R.currentMoves(g).length > 0 ? 'move' : 'stuck';
@@ -91,6 +92,16 @@ function candidatesAt(g, ids, key) {
   return byType;
 }
 
+/** Distinct-by-type candidates among `ids`: { soldier?: id, commander?: id }. */
+function candidatesOf(g, ids) {
+  const byType = {};
+  for (const id of ids) {
+    const u = R.getUnit(g, id);
+    if (!(u.type in byType)) byType[u.type] = id;
+  }
+  return byType;
+}
+
 function uniqueKeys(g, ids) {
   return [...new Set(ids.map((id) => unitKey(g, R.getUnit(g, id))))];
 }
@@ -100,12 +111,34 @@ function targetedUses(g) {
   return R.powerUseChoices(g).filter((c) => c.unit);
 }
 
+// --- "line" Lovers jumps ------------------------------------------------------
+
+/** Distinct jumps: one per source cell and unit type, { unit, pos, from, to } (pos: path position; from/to: cell keys). */
+function jumpOptions(g) {
+  const out = [];
+  for (const j of R.loversJumps(g)) {
+    const u = R.getUnit(g, j.unit);
+    const from = unitKey(g, u);
+    const to = unitKey(g, { player: u.player, pos: j.to });
+    if (!out.some((o) => o.from === from && R.getUnit(g, o.unit).type === u.type)) out.push({ unit: j.unit, pos: j.to, from, to });
+  }
+  return out;
+}
+
+/** The jump to make: the picked unit's, or the only one there is. */
+function chosenJump(m) {
+  const jumps = jumpOptions(m.game);
+  if (m.ui.pick?.unit) return jumps.find((j) => j.unit === m.ui.pick.unit) ?? null;
+  return jumps.length === 1 ? jumps[0] : null;
+}
+
 // --- what the screen should offer -------------------------------------------
 
 /**
  * Everything the view needs to draw highlights and controls:
  * { phase, tappable, selected, dest, targets, victims, options, chosen, canConfirm,
- *   canUsePower, power }
+ *   canUsePower, power, lines }
+ * lines: [{ from, to, on }] cell keys of the Lovers jumps on offer (on: the chosen one).
  */
 export function interactions(m) {
   const g = m.game;
@@ -113,7 +146,7 @@ export function interactions(m) {
   const pick = m.ui.pick;
   const out = {
     phase, tappable: [], selected: null, dest: null, targets: [], victims: [],
-    options: [], chosen: null, canConfirm: false,
+    options: [], chosen: null, canConfirm: false, lines: [],
     canUsePower: !m.ui.using && R.canUsePower(g) && phase !== 'won' && phase !== 'handoff',
     power: g.held[g.current],
   };
@@ -148,6 +181,20 @@ export function interactions(m) {
         out.options = Object.keys(pick.candidates);
       }
     }
+  }
+
+  if (phase === 'loversJump') {
+    const jumps = jumpOptions(g);
+    const chosen = chosenJump(m);
+    const isChosen = (j) => chosen !== null && j.unit === chosen.unit;
+    out.lines = jumps.map((j) => ({ from: j.from, to: j.to, on: isChosen(j) }));
+    if (chosen) {
+      Object.assign(out, { selected: chosen.from, dest: chosen.to, canConfirm: true });
+    } else if (pick?.candidates) {
+      out.selected = pick.source;
+      out.options = Object.keys(pick.candidates);
+    }
+    out.tappable = [...new Set(jumps.flatMap((j) => (isChosen(j) ? [j.to] : [j.from, j.to])))];
   }
 
   if (phase === R.POWERS.DEVIL) {
@@ -216,8 +263,8 @@ export function update(m, action) {
       return phase === 'draw' ? { game: R.drawCard(g), ui: freshUi(m.ui.viewer) } : m;
 
     case 'continue': {
-      // Only a turn's own card loses the turn; a Hanged Man or campsite card just doesn't move.
-      const event = { type: g.hanged || g.campsite ? 'noMove' : 'turnLost', player: g.current };
+      // Only a turn's own card loses the turn; a Hanged Man, campsite or Lovers card just doesn't move.
+      const event = { type: g.hanged || g.campsite || g.lovers ? 'noMove' : 'turnLost', player: g.current };
       if (phase === 'jokerPass') return commit(m, R.passJoker(g), [event]);
       if (phase !== 'stuck') return m;
       return commit(m, R.playDrawnNumber(g, null), [event]);
@@ -233,6 +280,9 @@ export function update(m, action) {
       return commit(m, R.usePower(g, {}), [{ type: 'played', player: g.current, power }]);
     }
 
+    case 'stay':
+      return phase === 'loversJump' ? commit(m, R.playLoversJump(g, null)) : m;
+
     case 'keep':
       if (phase !== 'draft') return m;
       return commit(m, R.playDraft(g, action.index));
@@ -246,7 +296,7 @@ export function update(m, action) {
     case 'option': {
       const sig = action.value;
       if (phase === 'move' && m.ui.pick) return ui({ pick: { ...m.ui.pick, sig } });
-      if ((phase === R.POWERS.LOVERS || phase === R.POWERS.DEVIL) && m.ui.pick?.candidates?.[sig]) {
+      if ((phase === R.POWERS.LOVERS || phase === R.POWERS.DEVIL || phase === 'loversJump') && m.ui.pick?.candidates?.[sig]) {
         return ui({ pick: { unit: m.ui.pick.candidates[sig] } });
       }
       return m;
@@ -257,6 +307,10 @@ export function update(m, action) {
       if (phase === 'move') {
         const opt = moveSources(g).get(m.ui.pick.source).find((o) => o.sig === m.ui.pick.sig);
         return commit(m, R.playDrawnNumber(g, opt.move));
+      }
+      if (phase === 'loversJump') {
+        const j = chosenJump(m);
+        return commit(m, R.playLoversJump(g, { unit: j.unit, to: j.pos }), [{ type: 'jumped', player: g.current }]);
       }
       if (phase === R.POWERS.DEVIL) {
         return commit(m, R.usePower(g, { unit: m.ui.pick.unit }), [
@@ -301,11 +355,21 @@ function tap(m, key, phase, ix) {
     return pickCandidate(m, key, targetedUses(g).map((c) => c.unit));
   }
 
+  if (phase === 'loversJump') {
+    if (ix.canConfirm && key === ix.dest) return update(m, { type: 'confirm' });
+    const jumps = jumpOptions(g);
+    // A unit's own cell first; else the ally's cell it would jump to.
+    const fromHere = jumps.filter((j) => j.from === key);
+    const ids = (fromHere.length ? fromHere : jumps.filter((j) => j.to === key)).map((j) => j.unit);
+    return ids.length ? pickCandidate(m, key, ids, { byUnit: false }) : setPick(null);
+  }
+
   return m;
 }
 
-function pickCandidate(m, key, ids) {
-  const candidates = candidatesAt(m.game, [...new Set(ids)], key);
+function pickCandidate(m, key, ids, { byUnit = true } = {}) {
+  // byUnit false: `key` may be the cell the units would reach rather than the one they stand on.
+  const candidates = byUnit ? candidatesAt(m.game, [...new Set(ids)], key) : candidatesOf(m.game, [...new Set(ids)]);
   const types = Object.keys(candidates);
   let pick = null;
   if (types.length === 1) pick = { unit: candidates[types[0]] };

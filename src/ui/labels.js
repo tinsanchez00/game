@@ -47,17 +47,20 @@ export const TEXT = {
   usePower: (power) => `Use ${power}`,
   usePowerInstead: (power) => `Use ${power} instead`,
   unleash: 'Unleash',
+  jump: 'Jump',
+  stay: 'Stay',
 
   status: {
     handoff: (team) => `${team}'s turn — pass the phone`,
     startTurn: (team) => `Start ${team}'s turn`,
     draw: (team) => `${team}'s turn · tap your deck to draw`,
-    // step: null (a normal card), 'back' / 'forward' (The Hanged Man), 'campsite'
+    // step: null (a normal card), 'back' / 'forward' (The Hanged Man), 'campsite', 'lovers'
     drawForward: 'The Hanged Man · tap your deck to draw the forward card',
     move: (n, step) => ({
       back: `The Hanged Man · move a unit ${n} back`,
       forward: `The Hanged Man · move ${n} forward`,
       campsite: `Campsite · move that unit ${n} again`,
+      lovers: `The Lovers · move a unit ${n} forward`,
     })[step] ?? `Move a unit ${n} forward`,
     pickMove: 'Tap the glowing cell to move there',
     stuck: (n, step) => ({
@@ -74,6 +77,8 @@ export const TEXT = {
     })[step] ?? 'Keep one power',
     loversPick: 'The Lovers · pick a unit in the middle lane',
     loversTarget: 'The Lovers · pick the lone ally to join',
+    loversJump: 'The Lovers · tap your ally to jump',
+    loversPickJumper: 'The Lovers · pick the unit that jumps',
     devilPick: 'The Devil · pick one of your units in the middle lane',
     devilConfirm: 'Marked units will die',
     chooseUnit: 'Which unit?',
@@ -87,5 +92,6 @@ export const TEXT = {
     noMove: (team) => `${team} couldn't move`,
     drafted: (team, power) => `${team} drafted ${power}`,
     played: (team, power) => `${team} played ${power}`,
+    jumped: (team) => `${team} jumped to an ally`,
   },
 };

@@ -125,6 +125,11 @@ export function passJoker(state) {
 // A power drafted this turn is never usable this turn: powers are only used
 // on a turn's own card (not during a Hanged Man use or a campsite card).
 
+/** Powers that use the turn's card rather than spending it. */
+function isFreePower(state, power) {
+  return power === POWERS.HANGED_MAN || (power === POWERS.LOVERS && state.config.rules.loversLine);
+}
+
 /** Can the current player use their held power right now? */
 export function canUsePower(state) {
   if (state.winner !== null || !state.config.powers) return false;
@@ -132,8 +137,10 @@ export function canUsePower(state) {
   if (!power || power === DUD || state.hanged || state.campsite || state.lovers) return false;
   if (state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW) return state.drawn === null;
   if (state.drawn === null) return false;
+  // Free powers use the drawn card: a drawn Joker drafts instead.
+  if (!isNumberCard(state.drawn) && isFreePower(state, power)) return false;
   // After draw, the Hanged Man needs a backward move for a drawn number card.
-  if (power === POWERS.HANGED_MAN && isNumberCard(state.drawn)) {
+  if (power === POWERS.HANGED_MAN) {
     return legalMoves(state, state.current, state.drawn, undefined, { backward: true, only: null }).length > 0;
   }
   return true;
@@ -173,7 +180,8 @@ export function usePower(state, args = {}) {
   }
   if (power === POWERS.LOVERS && state.config.rules.loversLine) {
     const s = state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? drawCard(used) : used;
-    // A number card with a move is played as usual; otherwise the card is spent and any unit may jump.
+    // A number card with a move is played as usual. Otherwise (no move; or a Joker,
+    // which only the before-draw timing can bring) the card is spent and any unit may jump.
     if (isNumberCard(s.drawn) && legalMoves(s, player, s.drawn).length > 0) {
       return { ...s, lovers: { stage: 'move' } };
     }

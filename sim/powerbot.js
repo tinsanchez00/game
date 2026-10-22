@@ -276,8 +276,10 @@ function resolveCard(fs, q, k, depth, ctx) {
   }
   if (fs.powersOn && !fs.beforeDraw && usable(fs.held[q])) {
     const p = fs.held[q];
-    // After draw, the Hanged Man needs a backward move for a number card.
-    if (p !== HM || k === fs.J || genMoves(fs, q, fs.values[k], true).length > 0) {
+    // After draw, free powers can't be used on a Joker (it drafts), and the
+    // Hanged Man needs a backward move for a number card.
+    const free = p === HM || (p === LOVERS && fs.loversLine);
+    if (!(free && k === fs.J) && (p !== HM || genMoves(fs, q, fs.values[k], true).length > 0)) {
       for (const t of powerTargets(fs, q, p)) {
         const v = afterPower(fs, q, p, t, k, depth, ctx);
         if (isBetter(v, best)) best = v;

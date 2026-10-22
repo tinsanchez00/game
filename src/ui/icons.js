@@ -28,3 +28,8 @@ export function campsiteGlyph() {
 export function lockIcon() {
   return '<svg class="lock" viewBox="0 0 10 10" fill="none" stroke-width="1.3" aria-hidden="true"><rect x="2" y="4.5" width="6" height="4.5" rx="1"></rect><path d="M3.5 4.5V3a1.5 1.5 0 0 1 3 0v1.5"></path></svg>';
 }
+
+/** The Lovers' jump mark. */
+export function heartIcon() {
+  return '<svg class="heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-7.5-10.1A4.2 4.2 0 0 1 12 8a4.2 4.2 0 0 1 7.5 2.4c0 5.5-7.5 10.1-7.5 10.1Z"></path></svg>';
+}

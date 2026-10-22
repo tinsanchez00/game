@@ -3,7 +3,7 @@
 
 import * as R from '../rules/index.js';
 import { interactions, unitKey } from './controller.js';
-import { campsiteGlyph, lockIcon, towerGlyph, unitIcon } from './icons.js';
+import { campsiteGlyph, heartIcon, lockIcon, towerGlyph, unitIcon } from './icons.js';
 import { boardSlots } from './layout.js';
 import { OPTION_LABELS, POWER_INFO, TEAM_NAMES, TEXT } from './labels.js';
 
@@ -55,11 +55,27 @@ function cell(slot, g, ix, victims, victimKeys) {
   return `<div class="${cls.join(' ')}" role="img" aria-label="${label}">${inner}</div>`;
 }
 
+/** Lovers jump lines: one along a lane from a unit to the ally it would join. */
+function jumpLines(slots, columns, ix) {
+  const at = (key) => slots.find((s) => s.key === key);
+  const rows = Math.max(...slots.map((s) => s.row)) + 1;
+  return ix.lines.map(({ from, to, on }) => {
+    const a = at(from);
+    const b = at(to);
+    if (!a || !b || a.row !== b.row) return '';
+    // From just inside the unit's cell to just inside the ally's, clear of both icons.
+    const left = ((Math.min(a.col, b.col) + 0.85) / columns) * 100;
+    const width = ((Math.abs(a.col - b.col) - 0.7) / columns) * 100;
+    const top = ((a.row + 0.5) / rows) * 100;
+    return `<div class="jump-line${on ? ' on' : ''}" style="left: ${left.toFixed(2)}%; width: ${width.toFixed(2)}%; top: ${top.toFixed(2)}%" aria-hidden="true">${heartIcon()}</div>`;
+  }).join('');
+}
+
 function board(g, viewer, ix, victims, victimKeys) {
   const other = R.otherPlayer(viewer);
   const slots = boardSlots(viewer, g.config);
   const columns = slots.filter((s) => s.row === 0).length;
-  const cells = slots.map((s) => cell(s, g, ix, victims, victimKeys)).join('');
+  const cells = slots.map((s) => cell(s, g, ix, victims, victimKeys)).join('') + jumpLines(slots, columns, ix);
   return `<section class="board-area" aria-label="Board">
     <span class="lane">${esc(TEXT.lane(team(other)))}</span>
     <div class="board-frame"><div class="board" style="grid-template-columns: repeat(${columns}, minmax(0, 1fr))">${cells}</div></div>
@@ -197,6 +213,7 @@ function eventsLine(m) {
     if (e.type === 'noMove') return TEXT.event.noMove(t);
     if (e.type === 'drafted') return TEXT.event.drafted(t, powerName(e.power));
     if (e.type === 'played') return TEXT.event.played(t, powerName(e.power));
+    if (e.type === 'jumped') return TEXT.event.jumped(t);
     return '';
   }).filter(Boolean);
   return lines.length ? `<p class="events">${esc(lines.join(' · '))}</p>` : '';
@@ -205,6 +222,7 @@ function eventsLine(m) {
 /** Which part of a turn the drawn card belongs to (see labels.js). */
 function stepOf(g) {
   if (g.campsite) return 'campsite';
+  if (g.lovers) return 'lovers';
   return g.hanged?.stage ?? null;
 }
 
@@ -252,6 +270,11 @@ function actions(m, ix) {
     case R.POWERS.LOVERS:
       status = ix.options.length ? S.chooseUnit : m.ui.pick?.unit ? S.loversTarget : S.loversPick;
       controls = optionChips(ix) + `<div class="buttons">${btn('cancel', TEXT.cancel)}</div>`;
+      break;
+    case 'loversJump':
+      status = ix.options.length ? S.chooseUnit : ix.canConfirm ? S.loversJump : S.loversPickJumper;
+      controls = optionChips(ix)
+        + `<div class="buttons">${btn('confirm', TEXT.jump, { primary: true, disabled: !ix.canConfirm })}${btn('stay', TEXT.stay)}</div>`;
       break;
     case R.POWERS.DEVIL:
       status = ix.options.length && !ix.canConfirm ? S.chooseUnit : ix.canConfirm ? S.devilConfirm : S.devilPick;
