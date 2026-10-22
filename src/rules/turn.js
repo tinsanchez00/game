@@ -19,7 +19,7 @@
 // drawn, hanged and campsite are all null again.
 
 import { JOKER, POWERS, isNumberCard } from './cards.js';
-import { POWER_TIMINGS } from './config.js';
+import { DUD, POWER_TIMINGS } from './config.js';
 import { continueTurn, endTurn, legalMoves, playNumberCard } from './moves.js';
 import { applyPower, powerChoices } from './powers.js';
 import { shuffle } from './random.js';
@@ -126,7 +126,7 @@ export function passJoker(state) {
 export function canUsePower(state) {
   if (state.winner !== null || !state.config.powers) return false;
   const power = state.held[state.current];
-  if (!power || state.hanged || state.campsite) return false;
+  if (!power || power === DUD || state.hanged || state.campsite) return false;
   if (state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW) return state.drawn === null;
   if (state.drawn === null) return false;
   // After draw, the Hanged Man needs a backward move for a drawn number card.

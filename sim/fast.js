@@ -8,7 +8,7 @@
 // across several cards (campsite cards, the Hanged Man's forward card) lives
 // in the bots (sim/powerbot.js).
 
-import { HOME, JOKER, POWER_IDS, geometry, otherPlayer } from '../src/rules/index.js';
+import { CARD_IDS, HOME, JOKER, geometry, otherPlayer } from '../src/rules/index.js';
 
 export function buildFast(state) {
   const config = state.config;
@@ -65,15 +65,16 @@ export function buildFast(state) {
     totals: [0, 0],
     middleFirst: g.middleFirst,
     middleLast: g.middleLast,
-    // Powers: held[p] is an index into POWER_IDS or -1; the power deck is
+    // Powers: held[p] is an index into CARD_IDS (powers, then the test-only
+    // dud) or -1; the power deck is
     // known by composition only.
     powersOn: config.powers,
     beforeDraw: config.powerTiming === 'beforeDraw',
-    held: state.held.map((h) => (h ? POWER_IDS.indexOf(h) : -1)),
-    pdCounts: new Int16Array(POWER_IDS.length),
+    held: state.held.map((h) => (h ? CARD_IDS.indexOf(h) : -1)),
+    pdCounts: new Int16Array(CARD_IDS.length),
     pdTotal: state.powerDeck.length,
   };
-  for (const id of state.powerDeck) fs.pdCounts[POWER_IDS.indexOf(id)] += 1;
+  for (const id of state.powerDeck) fs.pdCounts[CARD_IDS.indexOf(id)] += 1;
 
   state.units.forEach((u, i) => {
     fs.pos[i] = u.pos;

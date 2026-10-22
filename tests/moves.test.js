@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ASCENDED, HOME, applyMove, isCommanderLocked, legalMoves, playNumberCard,
 } from '../src/rules/index.js';
-import { gameWith, pos, soldiersOut } from './helpers.js';
+import { LOCK, gameWith, pos, soldiersOut } from './helpers.js';
 
 const has = (moves, unit, escort) =>
   moves.some((m) => m.unit === unit && (m.escort ?? null) === (escort ?? null));
@@ -32,9 +32,15 @@ test('private lanes never collide', () => {
 // --- commander lock ---
 
 test('commander is locked while any soldier is in the home field', () => {
-  const g = gameWith({ ...soldiersOut(0, [1, 2, 3, 5]) }); // s5 still home
+  const g = gameWith({ ...soldiersOut(0, [1, 2, 3, 5]) }, { config: LOCK }); // s5 still home
   assert.ok(isCommanderLocked(g, 0));
   assert.ok(!has(legalMoves(g, 0, 2), 'p0-c1'));
+});
+
+test('by default the commander moves even with soldiers at home (no lock)', () => {
+  const g = gameWith({ ...soldiersOut(0, [1, 2, 3, 5]) }); // s5 still home
+  assert.ok(!isCommanderLocked(g, 0));
+  assert.ok(has(legalMoves(g, 0, 2), 'p0-c1'));
 });
 
 test('commander can move once no soldiers are home', () => {
@@ -111,7 +117,7 @@ test('landing on enemy units removes all of them, commander included', () => {
 });
 
 test('capturing a soldier locks the opponent commander again', () => {
-  const g = gameWith({ 'p0-s1': 3, ...soldiersOut(1, [6, 1, 2, 3, 5]) });
+  const g = gameWith({ 'p0-s1': 3, ...soldiersOut(1, [6, 1, 2, 3, 5]) }, { config: LOCK });
   assert.ok(!isCommanderLocked(g, 1));
   const after = applyMove(g, { unit: 'p0-s1' }, 3);
   assert.ok(isCommanderLocked(after, 1));
@@ -199,7 +205,7 @@ test('you must move when a valid move exists', () => {
 });
 
 test('illegal moves are rejected', () => {
-  const g = gameWith();
+  const g = gameWith({}, { config: LOCK });
   assert.throws(() => applyMove(g, { unit: 'p0-c1' }, 2)); // locked
   assert.throws(() => applyMove(g, { unit: 'p1-s1' }, 2)); // not your turn
 });

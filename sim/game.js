@@ -5,7 +5,7 @@
 // included) or choose(state) (sim/bot.js: number-card moves, powers off).
 
 import {
-  HOME, POWER_IDS, canUsePower, createGame, currentMoves, drawCard, geometry,
+  CARD_IDS, HOME, canUsePower, createGame, currentMoves, drawCard, geometry,
   isNumberCard, mustPassJoker, passJoker, playDraft, playDrawnNumber, teamSize, usePower,
 } from '../src/rules/index.js';
 
@@ -16,9 +16,10 @@ function progress(state, p, A) {
 }
 
 function blankPowerStats() {
-  return Object.fromEntries(POWER_IDS.map((id) => [id, {
+  return Object.fromEntries(CARD_IDS.map((id) => [id, {
     drafted: 0, used: 0, noEffect: 0, enemyKilled: 0, ownKilled: 0,
     enemyProgressLost: 0, ownProgressLost: 0, swing: 0, usedBy: [0, 0],
+    heldTurns: 0, // turns started holding this card
   }]));
 }
 
@@ -64,7 +65,26 @@ export function playGame({ config, seed, bots, maxTurns = 5000 }) {
   let turns = 0;
   let hangedStart = null; // state before a Hanged Man use, until its move resolves
 
-  const act = (p, state) => (bots[p].act ? bots[p].act(state) : null);
+  // How much choice each turn offered (act bots only): no choice (one option
+  // at most), one sensible option, or a real choice between sensible options.
+  const choiceTurns = { none: [0, 0], one: [0, 0], real: [0, 0] };
+  let turnChoice = null; // { p, options, sensible } of the turn in progress
+  const closeTurn = () => {
+    if (!turnChoice) return;
+    const kind = turnChoice.options <= 1 ? 'none' : turnChoice.sensible <= 1 ? 'one' : 'real';
+    choiceTurns[kind][turnChoice.p] += 1;
+    turnChoice = null;
+  };
+  const act = (p, state) => {
+    if (!bots[p].act) return null;
+    const a = bots[p].act(state);
+    const c = bots[p].lastChoice;
+    if (c && turnChoice) {
+      turnChoice.options = Math.max(turnChoice.options, c.options);
+      turnChoice.sensible = Math.max(turnChoice.sensible, c.sensible);
+    }
+    return a;
+  };
 
   const recordMove = (p, before, after) => {
     const lost = losses(before, after);
@@ -100,6 +120,9 @@ export function playGame({ config, seed, bots, maxTurns = 5000 }) {
     if (startOfTurn) {
       turns += 1;
       turnsBy[p] += 1;
+      closeTurn();
+      if (bots[p].act) turnChoice = { p, options: 0, sensible: 0 };
+      if (s.held[p]) powers[s.held[p]].heldTurns += 1;
     }
 
     let a = null;
@@ -161,8 +184,10 @@ export function playGame({ config, seed, bots, maxTurns = 5000 }) {
     if (s.drawn === null) diffs.push(progress(s, 0, A) - progress(s, 1, A));
   }
 
+  closeTurn();
   const winner = s.winner;
   const record = {
+    choiceTurns,
     seed, first, winner, finished: winner !== null, turns, turnsBy,
     captured, captureMoves, multiCaptures, wasted, jokers, extraTurns,
     commanderOut, powerKills, powersUsed, powers, campsiteCards, teamSize: size,

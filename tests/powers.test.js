@@ -5,7 +5,7 @@ import {
   canUsePower, createGame, currentMoves, draftOptions, drawCard, playDraft, playDrawnNumber,
   powerUseChoices, usePower,
 } from '../src/rules/index.js';
-import { gameWith, pos, soldiersOut } from './helpers.js';
+import { LOCK, gameWith, pos, soldiersOut } from './helpers.js';
 
 /**
  * Player 0 holds `power` and has just drawn the first card of `deck`
@@ -228,7 +228,7 @@ test('Lovers with no valid pair can still be used, to no effect', () => {
 });
 
 test('Lovers: a locked commander cannot be moved', () => {
-  const g = playing(POWERS.LOVERS, { 'p0-c1': 5, 'p0-s1': 11 }); // soldiers still home
+  const g = playing(POWERS.LOVERS, { 'p0-c1': 5, 'p0-s1': 11 }, { config: LOCK }); // soldiers still home
   assert.ok(!powerUseChoices(g).some((c) => c.unit === 'p0-c1'));
 });
 
@@ -325,4 +325,21 @@ test('a power with nothing to hit can still be used to skip the drawn card', () 
   assert.equal(pos(after, 'p0-s1'), 5);
   assert.equal(after.current, 1);
   assert.deepEqual(after.moveDecks[0].discard, [3]);
+});
+
+// --- dud cards (test-only) ---
+
+test('a dud is drafted and held like a power but can never be used', () => {
+  let g = drawCard(gameWith({ 'p0-s1': 3 }, {
+    config: { powerDeck: ['dud', 'dud', 'devil'] },
+    moveDecks: [{ draw: [JOKER, 2], discard: [] }, { draw: [1, 1], discard: [] }],
+    powerDeck: ['dud', 'devil', 'dud'],
+  }));
+  g = playDraft(g, 0);
+  assert.equal(g.held[0], 'dud');
+  assert.deepEqual(g.powerDeck, ['dud', 'devil']);
+  g = playDrawnNumber(drawCard(g), { unit: 'p1-s1' }); // opponent's turn
+  g = drawCard(g);
+  assert.ok(!canUsePower(g));
+  assert.deepEqual(powerUseChoices(g), []);
 });

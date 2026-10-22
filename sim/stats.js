@@ -99,6 +99,7 @@ function powerSummary(done, teamSize) {
       enemyProgressLostPerUse: used ? t((x) => x.enemyProgressLost) / used : null,
       ownProgressLostPerUse: used ? t((x) => x.ownProgressLost) / used : null,
       swingPerUse: used ? t((x) => x.swing) / used : null,
+      heldShare: t((x) => x.heldTurns ?? 0) / sum((r) => r.turns),
     };
   }
   return {
@@ -108,7 +109,17 @@ function powerSummary(done, teamSize) {
     shutouts: rate(done.filter((r) => r.loserAscended === 0).length, n),
     powerKills: describe(done.map((r) => r.powerKills[0] + r.powerKills[1])),
     powersUsed: describe(done.map((r) => r.powersUsed[0] + r.powersUsed[1])),
+    choiceShares: choiceShares(done),
     winnerUsedMorePowers: rate(usedMore.filter((r) => r.winnerUsedMore).length, usedMore.length),
     perPower,
   };
+}
+
+/** Shares of turns with no choice, one sensible option, or a real choice. */
+function choiceShares(done) {
+  if (!done[0]?.choiceTurns) return null;
+  const tot = { none: 0, one: 0, real: 0 };
+  for (const r of done) for (const k of Object.keys(tot)) tot[k] += r.choiceTurns[k][0] + r.choiceTurns[k][1];
+  const n = tot.none + tot.one + tot.real;
+  return n ? { none: tot.none / n, one: tot.one / n, real: tot.real / n, turns: n } : null;
 }

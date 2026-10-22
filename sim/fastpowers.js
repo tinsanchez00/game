@@ -1,7 +1,7 @@
 // Power effects on the fast position copy (see fast.js), with undo.
 // tests/sim.test.js checks them against src/rules/powers.js.
 
-import { HOME, POWER_IDS } from '../src/rules/index.js';
+import { CARD_IDS, HOME, POWER_IDS } from '../src/rules/index.js';
 import { isLocked, lift, place } from './fast.js';
 
 export const HM = POWER_IDS.indexOf('hanged-man');
@@ -9,6 +9,10 @@ export const LOVERS = POWER_IDS.indexOf('lovers');
 export const DEVIL = POWER_IDS.indexOf('devil');
 export const TOWER = POWER_IDS.indexOf('tower');
 export const HERMIT = POWER_IDS.indexOf('hermit');
+export const DUD = CARD_IDS.indexOf('dud');
+
+/** Can a held card k be used (a power, not a dud or nothing)? */
+export const usable = (k) => k >= 0 && k !== DUD;
 export const NO_TARGET = Object.freeze([]);
 
 const shared = (fs, q) => q >= fs.middleFirst && q <= fs.middleLast;

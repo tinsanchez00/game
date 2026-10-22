@@ -26,7 +26,7 @@
 //   campsite / Hanged Man cards: which move (limited to one unit, or backward)
 
 import {
-  JOKER, POWER_IDS, canUsePower, currentMoves, draftOptions, getUnit,
+  CARD_IDS, JOKER, canUsePower, currentMoves, draftOptions, getUnit,
   isNumberCard, powerUseChoices,
 } from '../src/rules/index.js';
 import { DEFAULT_WEIGHTS, WIN, endWaitTable, evaluate } from './bot.js';
@@ -34,13 +34,16 @@ import {
   apply, buildFast, cardModeOf, discardCounts, drawCounts, genMoves, returnCard, takeCard, undo,
 } from './fast.js';
 import {
-  HM, NO_TARGET, applyDraft, applyPower, draftOdds, powerTargets, undoDraft, undoPower,
+  HM, NO_TARGET, applyDraft, usable, applyPower, draftOdds, powerTargets, undoDraft, undoPower,
 } from './fastpowers.js';
 
 /** Value of holding each power, in progress points (pips). */
 export const DEFAULT_POWER_VALUES = Object.freeze({
-  'hanged-man': 3, lovers: 2, devil: 4, tower: 3, hermit: 2,
+  'hanged-man': 3, lovers: 2, devil: 4, tower: 3, hermit: 2, dud: 0,
 });
+
+/** A turn's choice counts as sensible when within this many pips of the best. */
+export const SENSIBLE_MARGIN = 1;
 
 export const LEVELS = Object.freeze({
   strong: { depths: [[3, 0.8], [2, 0.2]], countCards: true, temperature: 0 },
@@ -179,7 +182,7 @@ function searchTurn(fs, depth, ctx) {
   const q = fs.current;
   const isBetter = better(ctx, q);
   let best = drawAndResolve(fs, depth, ctx);
-  if (fs.powersOn && fs.beforeDraw && fs.held[q] >= 0) {
+  if (fs.powersOn && fs.beforeDraw && usable(fs.held[q])) {
     const k = fs.held[q];
     for (const t of powerTargets(fs, q, k)) {
       const v = afterPower(fs, q, k, t, -1, depth, ctx);
@@ -233,7 +236,7 @@ function resolveCard(fs, q, k, depth, ctx) {
   } else {
     best = jokerValue(fs, q, END, depth, ctx);
   }
-  if (fs.powersOn && !fs.beforeDraw && fs.held[q] >= 0) {
+  if (fs.powersOn && !fs.beforeDraw && usable(fs.held[q])) {
     const p = fs.held[q];
     // After draw, the Hanged Man needs a backward move for a number card.
     if (p !== HM || k === fs.J || genMoves(fs, q, fs.values[k], true).length > 0) {
@@ -373,7 +376,7 @@ export function powerBot(options = {}) {
   if (options.depth !== undefined) level.depths = [[options.depth, 1]];
   const w = { ...DEFAULT_WEIGHTS, ...(options.weights ?? {}) };
   const pvMap = { ...DEFAULT_POWER_VALUES, ...(options.powerValues ?? {}) };
-  const pv = POWER_IDS.map((id) => pvMap[id]);
+  const pv = CARD_IDS.map((id) => pvMap[id] ?? 0);
   const random = options.random ?? Math.random;
 
   // One look-ahead per turn: decisions later in the same turn reuse it.
@@ -454,7 +457,7 @@ export function powerBot(options = {}) {
         opts.push({ action: { kind: 'passJoker' }, value: proceed(fs, me, jokerCont, depth, ctx) });
       }
       choices.forEach((id, index) => {
-        const rec = applyDraft(fs, me, POWER_IDS.indexOf(id));
+        const rec = applyDraft(fs, me, CARD_IDS.indexOf(id));
         opts.push({ action: { kind: 'draft', index }, value: proceed(fs, me, jokerCont, depth, ctx) });
         undoDraft(fs, rec);
       });
@@ -469,9 +472,13 @@ export function powerBot(options = {}) {
     lastDepth: null,
     /** Position-cache hits and misses so far. */
     stats,
+    /** The latest decision: distinct options, and how many were within SENSIBLE_MARGIN of the best. */
+    lastChoice: null,
     act(state) {
       this.lastDepth = depthFor(state);
       const options = decide(state, this.lastDepth);
+      const top = Math.max(...options.map((o) => o.value));
+      this.lastChoice = { options: options.length, sensible: options.filter((o) => o.value >= top - SENSIBLE_MARGIN).length };
       const choice = pick(options, level.temperature, random).action;
       check(state, choice);
       // A power used instead of drawing ends the turn (the Hanged Man goes on mid-turn).

@@ -18,6 +18,12 @@ export const POWER_IDS = Object.freeze([
   'hanged-man', 'lovers', 'devil', 'tower', 'hermit',
 ]);
 
+/** Test-only power card: drafted and held like a power, never usable. */
+export const DUD = 'dud';
+
+/** Every card id a power deck may hold. */
+export const CARD_IDS = Object.freeze([...POWER_IDS, DUD]);
+
 export const DEFAULT_CONFIG = deepFreeze({
   // false: a joker is a no-move card and the power deck is unused.
   powers: true,
@@ -36,7 +42,7 @@ export const DEFAULT_CONFIG = deepFreeze({
   },
   rules: {
     exactAscend: true, // false: any card that reaches past the last cell ascends
-    commanderLock: true, // false: commanders may move while soldiers are home
+    commanderLock: false, // true: commanders may not move while soldiers are home
     escort: true, // false: commanders always move alone
     towersProtect: true, // false: towers are plain cells for captures and the Hermit
     towerExtraTurn: false, // true: landing on a tower with a number card gives another turn
@@ -87,7 +93,7 @@ export function validateConfig(c) {
 
   check(Array.isArray(c.powerDeck), 'powerDeck must be a list');
   for (const p of c.powerDeck) {
-    check(POWER_IDS.includes(p), `unknown power "${p}"`);
+    check(CARD_IDS.includes(p), `unknown power "${p}"`);
   }
 
   check(isInt(c.soldiers) && c.soldiers >= 0, 'soldiers must be 0 or more');

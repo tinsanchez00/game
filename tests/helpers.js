@@ -3,10 +3,11 @@ import { createGame } from '../src/rules/index.js';
 /**
  * A new game with some units placed at given path positions.
  * @param {Record<string, number>} positions unit id -> path position
- * @param {object} options firstPlayer, seed, and any state fields to override
+ * @param {object} options firstPlayer, seed, config (settings overrides), and
+ *   any state fields to override
  */
-export function gameWith(positions = {}, { firstPlayer = 0, seed = 1, ...overrides } = {}) {
-  const state = createGame({ firstPlayer, seed });
+export function gameWith(positions = {}, { firstPlayer = 0, seed = 1, config, ...overrides } = {}) {
+  const state = createGame({ firstPlayer, seed, config });
   return {
     ...state,
     ...overrides,
@@ -24,3 +25,6 @@ export function pos(state, id) {
 export function soldiersOut(player, cells = [1, 2, 3, 5, 6]) {
   return Object.fromEntries(cells.map((c, i) => [`p${player}-s${i + 1}`, c]));
 }
+
+/** Settings with the optional commander lock switched on. */
+export const LOCK = Object.freeze({ rules: { commanderLock: true } });

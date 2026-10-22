@@ -115,7 +115,7 @@ test('team size follows soldiers and commanders', () => {
 });
 
 test('every commander waits for the soldiers; with no soldiers they move at once', () => {
-  const two = game({ commanders: 2 });
+  const two = game({ commanders: 2, rules: { commanderLock: true } });
   assert.ok(!legalMovesFor(two).some((m) => m.unit.includes('-c')));
   const none = game({ soldiers: 0, commanders: 2 });
   assert.ok(has(legalMovesFor(none), 'p0-c1'));
