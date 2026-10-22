@@ -9,8 +9,15 @@
 //   strong-v1   2 turns ahead; counts cards; no noise
 //   average-v1  1 turn ahead; no card counting; temperature 1.5
 // "2 turns ahead" = its own turn, then every card the opponent can draw and
-// their best reply. Cards drawn inside a turn (campsite cards, the Hanged
-// Man's forward card) are chance nodes within that turn.
+// their best reply. An extra card drawn inside a turn (a campsite card, the
+// Hanged Man's forward card) uses up one turn of look-ahead too, like the
+// next turn would for a person thinking ahead.
+//
+// `cache: true` reuses the value of a turn-start position met again during a
+// decision (same units, powers, decks, side to move and look-ahead left).
+// Decisions are identical either way; it is off by default because such
+// repeats are rare (each line of play leaves the decks in a different state)
+// and the bookkeeping costs about as much as it saves.
 //
 // The bot answers bot.act(state) at every decision the engine offers:
 //   turn start (before-draw timing, holding a power): draw or use the power
@@ -47,6 +54,39 @@ export const LEVELS = Object.freeze({
 const END = -2;
 
 // --- search ------------------------------------------------------------------
+
+/**
+ * Cache key for a position at `tag` (a search point) with `depth` left.
+ * Units of the same player and type are interchangeable, so each group is
+ * listed by sorted position.
+ */
+function positionKey(fs, tag, depth, ctx) {
+  let k = `${tag}|${depth}|${fs.current}|${fs.bonus}|${ctx.free}|${fs.held[0]}|${fs.held[1]}`;
+  for (let p = 0; p < 2; p += 1) {
+    for (let c = 0; c < 2; c += 1) {
+      const xs = [];
+      for (let i = 0; i < fs.n; i += 1) if (fs.owner[i] === p && fs.cmd[i] === c) xs.push(fs.pos[i]);
+      xs.sort((a, b) => a - b);
+      k += `|${xs.join('.')}`;
+    }
+  }
+  return `${k}|${fs.pdCounts.join('.')}|${fs.counts[0].join('.')}|${fs.counts[1].join('.')}|${fs.totals[0]}|${fs.totals[1]}`;
+}
+
+/** Runs `compute` once per position key (when the decision has a cache). */
+function cached(fs, tag, depth, ctx, compute) {
+  if (!ctx.cache) return compute();
+  const key = positionKey(fs, tag, depth, ctx);
+  const hit = ctx.cache.get(key);
+  if (hit !== undefined) {
+    ctx.stats.hits += 1;
+    return hit;
+  }
+  ctx.stats.misses += 1;
+  const v = compute();
+  ctx.cache.set(key, v);
+  return v;
+}
 
 function leaf(fs, ctx) {
   const v = evaluate(fs, ctx.me, ctx.w, ctx.endOdds);
@@ -132,6 +172,10 @@ function bestMove(fs, q, d, back, only, cont, depth, ctx) {
 /** Value at the start of fs.current's turn, before any card is drawn. */
 function turnStart(fs, depth, ctx) {
   if (depth <= 0) return leaf(fs, ctx);
+  return cached(fs, 'T', depth, ctx, () => searchTurn(fs, depth, ctx));
+}
+
+function searchTurn(fs, depth, ctx) {
   const q = fs.current;
   const isBetter = better(ctx, q);
   let best = drawAndResolve(fs, depth, ctx);
@@ -209,8 +253,13 @@ function hangedCard(fs, q, k, depth, ctx) {
   return v === undefined ? endTurn(fs, q, depth, ctx) : v;
 }
 
-/** The Hanged Man's forward card, moving unit `unit` (-1: any). */
-function forwardCard(fs, q, unit, depth, ctx) {
+/**
+ * The Hanged Man's forward card, moving unit `unit` (-1: any). The extra
+ * draw uses up a turn of look-ahead.
+ */
+function forwardCard(fs, q, unit, depth0, ctx) {
+  const depth = depth0 - 1;
+  if (depth <= 0) return leaf(fs, ctx);
   const { counts, total } = drawCounts(fs, q);
   let value = 0;
   for (let k = 0; k <= fs.J; k += 1) {
@@ -230,8 +279,13 @@ function forwardCard(fs, q, unit, depth, ctx) {
   return value;
 }
 
-/** A campsite card for `unit`: random from q's discard pile, then `cont`. */
-function campsite(fs, q, unit, cont, depth, ctx) {
+/**
+ * A campsite card for `unit`: random from q's discard pile, then `cont`.
+ * The extra draw uses up a turn of look-ahead.
+ */
+function campsite(fs, q, unit, cont, depth0, ctx) {
+  const depth = depth0 - 1;
+  if (depth <= 0) return leaf(fs, ctx);
   const { counts, total } = discardCounts(fs, q);
   let value = 0;
   for (let k = 0; k <= fs.J; k += 1) {
@@ -309,7 +363,7 @@ function rollDepth(depths, random) {
 
 /**
  * @param {{ level?: string, depths?, depth?, countCards?, temperature?,
- *           weights?, powerValues?, random?: () => number }} options
+ *           weights?, powerValues?, cache?: boolean, random?: () => number }} options
  *   depth: a fixed look-ahead, shorthand for depths [[depth, 1]].
  */
 export function powerBot(options = {}) {
@@ -340,6 +394,9 @@ export function powerBot(options = {}) {
     return turnDepth;
   }
 
+  const useCache = options.cache === true;
+  const stats = { hits: 0, misses: 0 };
+
   function setup(state) {
     const fs = buildFast(state);
     if (!level.countCards) {
@@ -348,7 +405,8 @@ export function powerBot(options = {}) {
         fs.totals[p] = fs.fullTotal;
       }
     }
-    return { fs, ctx: { me: state.current, w, pv, endOdds: endWaitTable(fs), free: 1 } };
+    const cache = useCache ? new Map() : null;
+    return { fs, ctx: { me: state.current, w, pv, endOdds: endWaitTable(fs), free: 1, cache, stats } };
   }
 
   function decide(state, depth) {
@@ -409,6 +467,8 @@ export function powerBot(options = {}) {
     name: `power-${levelName}`,
     /** Look-ahead (turns) used for the latest decision. */
     lastDepth: null,
+    /** Position-cache hits and misses so far. */
+    stats,
     act(state) {
       this.lastDepth = depthFor(state);
       const options = decide(state, this.lastDepth);
