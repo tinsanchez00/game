@@ -268,7 +268,7 @@ test('power bots play full games at every level and timing, using every power an
 });
 
 test('the mixed look-ahead draws one depth per turn, at the level odds', () => {
-  for (const [level, share] of [['average', 0.5], ['strong', 0.8]]) {
+  for (const [level, share] of [['average', 0.65], ['strong', 0.8]]) {
     const bot = powerBot({ level, random: rng(level.length) });
     const perTurn = [];
     for (let seed = 1; seed <= 400 && perTurn.length < 400; seed += 1) {
@@ -326,4 +326,23 @@ test('power games are reproducible from the seed', () => {
 test('the powers-off search bot refuses campsites', () => {
   const bots = [searchBot(), searchBot()];
   assert.throws(() => playGame({ config: { powers: false }, seed: 1, bots }), /campsites/);
+});
+
+test('two identical draft cards are offered as one choice', () => {
+  const base = R.createGame({ seed: 2, firstPlayer: 0, config: { powerDeck: ['dud', 'dud', 'devil'] } });
+  const s = R.drawCard({ ...base, moveDecks: [{ draw: [R.JOKER], discard: [] }, { draw: [1], discard: [] }], powerDeck: ['dud', 'dud', 'devil'] });
+  const bot = powerBot({ level: 'average', random: rng(1) });
+  const a = bot.act(s);
+  assert.equal(a.kind, 'draft');
+  assert.equal(bot.lastChoice.options, 1);
+});
+
+test('turn choices are recorded only when asked, one class per bot turn', () => {
+  const bots = () => [powerBot({ level: 'average', random: rng(4) }), powerBot({ level: 'average', random: rng(5) })];
+  const off = playGame({ config: { soldiers: 2 }, seed: 3, bots: bots() });
+  assert.equal(off.choiceTurns, null);
+  const on = playGame({ config: { soldiers: 2 }, seed: 3, bots: bots(), measureChoices: true });
+  const n = (k) => on.choiceTurns[k][0] + on.choiceTurns[k][1];
+  assert.equal(n('none') + n('one') + n('real'), on.turns);
+  assert.equal(on.turns, off.turns, 'measuring changes nothing in the game');
 });

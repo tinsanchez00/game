@@ -43,7 +43,7 @@ function changed(before, after) {
 /**
  * @returns a record of the game (see fields below).
  */
-export function playGame({ config, seed, bots, maxTurns = 5000 }) {
+export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices = false }) {
   let s = createGame({ seed, config });
   const A = geometry(s.config).ascended;
   const size = teamSize(s.config);
@@ -79,7 +79,7 @@ export function playGame({ config, seed, bots, maxTurns = 5000 }) {
     if (!bots[p].act) return null;
     const a = bots[p].act(state);
     const c = bots[p].lastChoice;
-    if (c && turnChoice) {
+    if (measureChoices && c && turnChoice) {
       turnChoice.options = Math.max(turnChoice.options, c.options);
       turnChoice.sensible = Math.max(turnChoice.sensible, c.sensible);
     }
@@ -121,7 +121,7 @@ export function playGame({ config, seed, bots, maxTurns = 5000 }) {
       turns += 1;
       turnsBy[p] += 1;
       closeTurn();
-      if (bots[p].act) turnChoice = { p, options: 0, sensible: 0 };
+      if (measureChoices && bots[p].act) turnChoice = { p, options: 0, sensible: 0 };
       if (s.held[p]) powers[s.held[p]].heldTurns += 1;
     }
 
@@ -187,7 +187,7 @@ export function playGame({ config, seed, bots, maxTurns = 5000 }) {
   closeTurn();
   const winner = s.winner;
   const record = {
-    choiceTurns,
+    choiceTurns: measureChoices ? choiceTurns : null,
     seed, first, winner, finished: winner !== null, turns, turnsBy,
     captured, captureMoves, multiCaptures, wasted, jokers, extraTurns,
     commanderOut, powerKills, powersUsed, powers, campsiteCards, teamSize: size,

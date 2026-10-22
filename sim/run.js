@@ -4,7 +4,8 @@
 //                        [--weights '{"tower":2}'] [--only id1,id2]
 //                        [--bot '{"kind":"power","level":"strong"}'] [--resume]
 //
-// <scenarios.mjs> default-exports [{ id, label, group?, meta?, bot?, config }].
+// <scenarios.mjs> default-exports [{ id, label, group?, meta?, bot?, config,
+// measureChoices? }] (measureChoices: record how much choice each turn offered).
 // Every scenario plays the same seeds (1..N) with the same bot on both sides:
 // the scenario's own `bot`, else --bot, else a search bot of --depth.
 // The output file is rewritten after every scenario; --resume skips the
@@ -83,7 +84,9 @@ for (const sc of scenarios) {
   const parts = loadPartial(sc.id, size);
   const todo = seedChunks.map((seeds, i) => ({ i, seeds })).filter(({ i }) => !parts[i]);
   if (todo.length < seedChunks.length) console.log(`${sc.id}: continuing, ${seedChunks.length - todo.length}/${seedChunks.length} jobs already done`);
-  await runJobs(todo.map(({ seeds }) => ({ type: 'games', config, bots: [bot, bot], seeds, maxTurns: 5000 })), {
+  await runJobs(todo.map(({ seeds }) => ({
+    type: 'games', config, bots: [bot, bot], seeds, maxTurns: 5000, measureChoices: Boolean(sc.measureChoices),
+  })), {
     onResult: (k, result) => {
       parts[todo[k].i] = result;
       writeFileSync(partialPath, JSON.stringify({ id: sc.id, size, games, parts }));

@@ -32,33 +32,49 @@ export const WIN = 1e6;
 
 // --- evaluation ------------------------------------------------------------
 
+// Scratch buffers for expectedLoss (one search runs at a time per thread).
+let cellGain = new Int32Array(0);
+let movers = new Int16Array(0);
+
 /** Expected best capture value for `att` against `vic` on att's next draw. */
 function expectedLoss(fs, att, vic) {
-  const { counts, total } = drawCounts(fs, att);
+  // Same odds as drawCounts(fs, att), without allocating.
+  const full = fs.totals[att] === 0;
+  const counts = full ? fs.fullCounts : fs.counts[att];
+  const total = full ? fs.fullTotal : fs.totals[att];
   if (total === 0) return 0;
+  // Progress the victim would lose on each cell, and the attacker's movable units.
+  if (cellGain.length < fs.occ[0].length) cellGain = new Int32Array(fs.occ[0].length);
+  if (movers.length < fs.n) movers = new Int16Array(fs.n);
+  cellGain.fill(0);
   const locked = isLocked(fs, att);
+  let m = 0;
+  for (let j = 0; j < fs.n; j += 1) {
+    if (fs.owner[j] === vic) {
+      const c = fs.cellIdx[vic][fs.pos[j]];
+      if (c >= 0) cellGain[c] += fs.pos[j];
+    } else if (!(fs.cmd[j] && locked) && fs.pos[j] !== fs.A) {
+      movers[m] = j;
+      m += 1;
+    }
+  }
   let loss = 0;
   for (let k = 0; k < fs.J; k += 1) {
     const cnt = counts[k];
     if (cnt === 0) continue;
     const d = fs.values[k];
     let best = 0;
-    for (let i = 0; i < fs.n; i += 1) {
-      if (fs.owner[i] !== att) continue;
-      if (fs.cmd[i] && locked) continue;
-      const from = fs.pos[i];
-      if (from === fs.A) continue;
-      const t = from + d;
+    const cells = fs.cellIdx[att];
+    for (let x = 0; x < m; x += 1) {
+      const t = fs.pos[movers[x]] + d;
       if (t >= fs.A) continue;
-      const c = fs.cellIdx[att][t];
-      if (c < 0 || fs.occ[vic][c] === 0) continue;
+      const c = cells[t];
+      if (c < 0) continue;
+      const g = cellGain[c]; // 0 when no victim stands there
+      if (g <= best) continue;
       if (fs.protect && fs.tower[t]) continue;
       if (fs.occ[att][c] + 1 > fs.maxPerCell) continue;
-      let gain = 0;
-      for (let j = 0; j < fs.n; j += 1) {
-        if (fs.owner[j] === vic && fs.cellIdx[vic][fs.pos[j]] === c) gain += fs.pos[j];
-      }
-      if (gain > best) best = gain;
+      best = g;
     }
     loss += (cnt / total) * best;
   }

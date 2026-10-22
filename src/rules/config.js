@@ -42,7 +42,7 @@ export const DEFAULT_CONFIG = deepFreeze({
   },
   rules: {
     exactAscend: true, // false: any card that reaches past the last cell ascends
-    commanderLock: false, // true: commanders may not move while soldiers are home
+    commanderLock: true, // false: commanders may move while soldiers are home
     escort: true, // false: commanders always move alone
     towersProtect: true, // false: towers are plain cells for captures and the Hermit
     towerExtraTurn: false, // true: landing on a tower with a number card gives another turn

@@ -4,8 +4,8 @@
 // `depths`, [[turns, probability], ...]), whether it counts cards, and how
 // noisy its choices are (softmax over the evaluation, temperature in pips).
 //   strong      3 turns ahead 80% of turns, 2 turns 20%; counts cards; no noise
-//   average     3 turns ahead 50% of turns, 2 turns 50%; assumes a full deck
-//               on every draw (no card counting); temperature 1.5
+//   average     3 turns ahead 65% of turns, 2 turns 35%; assumes a full deck
+//               on every draw (no card counting); temperature 1.2
 //   strong-v1   2 turns ahead; counts cards; no noise
 //   average-v1  1 turn ahead; no card counting; temperature 1.5
 // "2 turns ahead" = its own turn, then every card the opponent can draw and
@@ -47,7 +47,7 @@ export const SENSIBLE_MARGIN = 1;
 
 export const LEVELS = Object.freeze({
   strong: { depths: [[3, 0.8], [2, 0.2]], countCards: true, temperature: 0 },
-  average: { depths: [[3, 0.5], [2, 0.5]], countCards: false, temperature: 1.5 },
+  average: { depths: [[3, 0.65], [2, 0.35]], countCards: false, temperature: 1.2 },
   'strong-v1': { depths: [[2, 1]], countCards: true, temperature: 0 },
   'average-v1': { depths: [[1, 1]], countCards: false, temperature: 1.5 },
 });
@@ -412,58 +412,74 @@ export function powerBot(options = {}) {
     return { fs, ctx: { me: state.current, w, pv, endOdds: endWaitTable(fs), free: 1, cache, stats } };
   }
 
+  /**
+   * The options at this decision, each with its value. Options are listed
+   * first and only searched when there is more than one to choose from.
+   */
   function decide(state, depth) {
     const { fs, ctx } = setup(state);
     const me = state.current;
-    const opts = [];
+    const opts = []; // { action, value: () => number }
     const usePowerOptions = (k) => {
       const p = fs.held[me];
       for (const t of powerTargets(fs, me, p)) {
-        opts.push({ action: { kind: 'power', args: engineTarget(fs, t) }, value: afterPower(fs, me, p, t, k, depth, ctx) });
+        opts.push({ action: { kind: 'power', args: engineTarget(fs, t) }, value: () => afterPower(fs, me, p, t, k, depth, ctx) });
       }
     };
 
     if (state.drawn === null) {
       // Before-draw timing: draw, or use the power instead.
-      opts.push({ action: { kind: 'draw' }, value: drawAndResolve(fs, depth, ctx) });
+      opts.push({ action: { kind: 'draw' }, value: () => drawAndResolve(fs, depth, ctx) });
       if (canUsePower(state)) usePowerOptions(-1);
-      return opts;
-    }
-
-    // What follows this card: the Hanged Man's forward card after its
-    // backward card (for the unit that moved; any unit after a joker), or
-    // after a campsite card met during that backward step; else the turn ends.
-    const { back, only } = cardModeOf(fs, state);
-    const idx = (id) => (id ? fs.ids.indexOf(id) : -1);
-    const cont = state.campsite && state.hanged?.stage === 'back' ? idx(state.hanged.unit) : END;
-    if (isNumberCard(state.drawn)) {
-      const d = state.drawn;
-      for (const m of genMoves(fs, me, d, back, only)) {
-        const rec = play(fs, me, m[0], m[1], d, back);
-        const v = afterLanding(fs, me, rec, back ? m[0] : cont, depth, ctx);
-        unplay(fs, rec);
-        opts.push({ action: { kind: 'move', move: engineMove(fs, m) }, value: v });
-      }
-      if (opts.length === 0) {
-        // No move: a Hanged Man backward card with no move ends the turn.
-        const v = back ? endTurn(fs, me, depth, ctx) : proceed(fs, me, cont, depth, ctx);
-        opts.push({ action: { kind: 'pass' }, value: v });
-      }
     } else {
-      // Joker: draft one of the visible cards, or pass when drafting can't happen.
-      const jokerCont = back ? -1 : cont;
-      const choices = draftOptions(state);
-      if (choices.length === 0) {
-        opts.push({ action: { kind: 'passJoker' }, value: proceed(fs, me, jokerCont, depth, ctx) });
+      // What follows this card: the Hanged Man's forward card after its
+      // backward card (for the unit that moved; any unit after a joker), or
+      // after a campsite card met during that backward step; else the turn ends.
+      const { back, only } = cardModeOf(fs, state);
+      const idx = (id) => (id ? fs.ids.indexOf(id) : -1);
+      const cont = state.campsite && state.hanged?.stage === 'back' ? idx(state.hanged.unit) : END;
+      if (isNumberCard(state.drawn)) {
+        const d = state.drawn;
+        for (const m of genMoves(fs, me, d, back, only)) {
+          opts.push({
+            action: { kind: 'move', move: engineMove(fs, m) },
+            value: () => {
+              const rec = play(fs, me, m[0], m[1], d, back);
+              const v = afterLanding(fs, me, rec, back ? m[0] : cont, depth, ctx);
+              unplay(fs, rec);
+              return v;
+            },
+          });
+        }
+        if (opts.length === 0) {
+          // No move: a Hanged Man backward card with no move ends the turn.
+          opts.push({ action: { kind: 'pass' }, value: () => (back ? endTurn(fs, me, depth, ctx) : proceed(fs, me, cont, depth, ctx)) });
+        }
+      } else {
+        // Joker: draft one of the visible cards, or pass when drafting can't happen.
+        const jokerCont = back ? -1 : cont;
+        const choices = draftOptions(state);
+        if (choices.length === 0) {
+          opts.push({ action: { kind: 'passJoker' }, value: () => proceed(fs, me, jokerCont, depth, ctx) });
+        }
+        choices.forEach((id, index) => {
+          if (choices.indexOf(id) !== index) return; // two identical cards are one choice
+          opts.push({
+            action: { kind: 'draft', index },
+            value: () => {
+              const rec = applyDraft(fs, me, CARD_IDS.indexOf(id));
+              const v = proceed(fs, me, jokerCont, depth, ctx);
+              undoDraft(fs, rec);
+              return v;
+            },
+          });
+        });
       }
-      choices.forEach((id, index) => {
-        const rec = applyDraft(fs, me, CARD_IDS.indexOf(id));
-        opts.push({ action: { kind: 'draft', index }, value: proceed(fs, me, jokerCont, depth, ctx) });
-        undoDraft(fs, rec);
-      });
+      if (canUsePower(state)) usePowerOptions(slotOf(fs, state.drawn));
     }
-    if (canUsePower(state)) usePowerOptions(slotOf(fs, state.drawn));
-    return opts;
+    // A single option needs no search.
+    if (opts.length === 1) return [{ action: opts[0].action, value: 0 }];
+    return opts.map((o) => ({ action: o.action, value: o.value() }));
   }
 
   return {

@@ -117,7 +117,7 @@ function powerSummary(done, teamSize) {
 
 /** Shares of turns with no choice, one sensible option, or a real choice. */
 function choiceShares(done) {
-  if (!done[0]?.choiceTurns) return null;
+  if (!done.length || !done.every((r) => r.choiceTurns)) return null;
   const tot = { none: 0, one: 0, real: 0 };
   for (const r of done) for (const k of Object.keys(tot)) tot[k] += r.choiceTurns[k][0] + r.choiceTurns[k][1];
   const n = tot.none + tot.one + tot.real;

@@ -37,8 +37,8 @@ test('commander is locked while any soldier is in the home field', () => {
   assert.ok(!has(legalMoves(g, 0, 2), 'p0-c1'));
 });
 
-test('by default the commander moves even with soldiers at home (no lock)', () => {
-  const g = gameWith({ ...soldiersOut(0, [1, 2, 3, 5]) }); // s5 still home
+test('with the lock switched off, the commander moves even with soldiers at home', () => {
+  const g = gameWith({ ...soldiersOut(0, [1, 2, 3, 5]) }, { config: { rules: { commanderLock: false } } }); // s5 still home
   assert.ok(!isCommanderLocked(g, 0));
   assert.ok(has(legalMoves(g, 0, 2), 'p0-c1'));
 });

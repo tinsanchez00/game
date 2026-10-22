@@ -49,6 +49,7 @@ export function runJob(job) {
       seed,
       bots: [makeBot(job.bots[0], seed), makeBot(job.bots[1], seed + 1)],
       maxTurns: job.maxTurns,
+      measureChoices: Boolean(job.measureChoices),
     }));
   }
   throw new Error(`unknown job ${job.type}`);
