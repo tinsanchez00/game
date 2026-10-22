@@ -56,6 +56,7 @@ export function buildFast(state) {
     protect: config.rules.towersProtect,
     towerTurn: config.rules.towerExtraTurn,
     loversLine: config.rules.loversLine,
+    hangedTurn: config.rules.hangedTurn,
     current: state.current,
     bonus: state.bonusTurn ? 1 : 0, // extra turns earned so far this turn
     values,

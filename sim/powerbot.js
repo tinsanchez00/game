@@ -58,6 +58,7 @@ export const LEVELS = Object.freeze({
 // card for unit index c >= 0, or a "line" Lovers jump for unit u (jumpFor(u)).
 // JUMP_MOVER: a jump for the unit that makes the move.
 const END = -2;
+const EXTRA = -3; // rules.hangedTurn: an extra turn for the mover's side
 const JUMP_MOVER = -1000;
 const jumpFor = (u) => -4 - u;
 
@@ -135,8 +136,21 @@ function endTurn(fs, q, depth, ctx) {
 
 function proceed(fs, q, cont, depth, ctx) {
   if (cont === END) return endTurn(fs, q, depth, ctx);
+  if (cont === EXTRA) return extraTurn(fs, q, depth, ctx);
   if (cont >= 0) return forwardCard(fs, q, cont, depth, ctx);
   return loversJump(fs, q, -4 - cont, depth, ctx);
+}
+
+/** q plays again (Hanged Man extra turn); it uses up a turn of look-ahead. */
+function extraTurn(fs, q, depth, ctx) {
+  const prevCurrent = fs.current;
+  const prevBonus = fs.bonus;
+  fs.current = q;
+  fs.bonus = 0;
+  const v = turnStart(fs, depth - 1, ctx);
+  fs.current = prevCurrent;
+  fs.bonus = prevBonus;
+  return v;
 }
 
 /** Moves unit i to path position t without captures; returns an undo record. */
@@ -167,6 +181,9 @@ function loversJump(fs, q, unit, depth, ctx) {
   }
   return best;
 }
+
+/** What follows the Hanged Man's backward move of unit u. */
+const afterBack = (fs, u) => (fs.hangedTurn ? EXTRA : u);
 
 /** Applies a move inside q's turn (the turn may continue). */
 function play(fs, q, u, e, d, back) {
@@ -201,7 +218,7 @@ function bestMove(fs, q, d, back, only, cont, depth, ctx) {
   let best = worst(ctx, q);
   for (const [u, e] of moves) {
     const rec = play(fs, q, u, e, d, back);
-    const v = afterLanding(fs, q, rec, back ? u : cont === JUMP_MOVER ? jumpFor(u) : cont, depth, ctx);
+    const v = afterLanding(fs, q, rec, back ? afterBack(fs, u) : cont === JUMP_MOVER ? jumpFor(u) : cont, depth, ctx);
     unplay(fs, rec);
     if (isBetter(v, best)) best = v;
   }
@@ -501,7 +518,7 @@ export function powerBot(options = {}) {
       // after a campsite card met during that backward step; else the turn ends.
       const { back, only } = cardModeOf(fs, state);
       const idx = (id) => (id ? fs.ids.indexOf(id) : -1);
-      let cont = state.campsite && state.hanged?.stage === 'back' ? idx(state.hanged.unit) : END;
+      let cont = state.campsite && state.hanged?.stage === 'back' ? afterBack(fs, idx(state.hanged.unit)) : END;
       // "Line" Lovers card move: the mover's jump follows (the campsite unit's, during its card).
       if (state.lovers) cont = state.campsite ? jumpFor(idx(state.campsite.unit)) : JUMP_MOVER;
       if (isNumberCard(state.drawn)) {
@@ -511,7 +528,7 @@ export function powerBot(options = {}) {
             action: { kind: 'move', move: engineMove(fs, m) },
             value: () => {
               const rec = play(fs, me, m[0], m[1], d, back);
-              const v = afterLanding(fs, me, rec, back ? m[0] : cont === JUMP_MOVER ? jumpFor(m[0]) : cont, depth, ctx);
+              const v = afterLanding(fs, me, rec, back ? afterBack(fs, m[0]) : cont === JUMP_MOVER ? jumpFor(m[0]) : cont, depth, ctx);
               unplay(fs, rec);
               return v;
             },

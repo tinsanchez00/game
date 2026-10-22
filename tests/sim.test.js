@@ -404,3 +404,19 @@ test('power bots play full games with the "line" Lovers', () => {
   }
   assert.ok(used > 0 && jumped > 0, `used ${used}, jumped ${jumped}`);
 });
+
+test('power bots play full games with the extra-turn Hanged Man', () => {
+  let used = 0;
+  for (const level of ['average', 'strong-v1']) {
+    for (const seed of [1, 2]) {
+      const r = playGame({
+        config: { soldiers: 3, powerDeck: ['hanged-man', 'hanged-man', 'hanged-man', 'dud'], rules: { hangedTurn: true } },
+        seed,
+        bots: [powerBot({ level, random: rng(seed) }), powerBot({ level, random: rng(seed + 3) })],
+      });
+      assert.ok(r.finished);
+      used += r.powers['hanged-man'].used;
+    }
+  }
+  assert.ok(used > 0, `used ${used}`);
+});

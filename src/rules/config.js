@@ -46,6 +46,7 @@ export const DEFAULT_CONFIG = deepFreeze({
     escort: true, // false: commanders always move alone
     towersProtect: true, // false: towers are plain cells for captures and the Hermit
     towerExtraTurn: false, // true: landing on a tower with a number card gives another turn
+    hangedTurn: false, // true: the Hanged Man's bonus is an extra turn instead of the forward card
     loversLine: true, // false: the earlier Lovers (pair a middle-lane unit with a lone ally there)
   },
 });

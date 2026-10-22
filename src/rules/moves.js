@@ -166,6 +166,8 @@ export function continueTurn(state, landing = null) {
   }
   // A free power's bonus needs a unit that moved with the card.
   if (done.hanged?.stage === 'back' && done.hanged.unit !== null) {
+    // rules.hangedTurn: an extra turn instead of the forward card.
+    if (done.config.rules.hangedTurn) return endTurn({ ...done, hanged: null }, true);
     return { ...done, hanged: { stage: 'forward', unit: done.hanged.unit } };
   }
   const mover = landing?.unit ?? state.campsite?.unit ?? null;

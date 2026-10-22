@@ -348,3 +348,36 @@ test('a dud is drafted and held like a power but can never be used', () => {
   assert.ok(!canUsePower(g));
   assert.deepEqual(powerUseChoices(g), []);
 });
+
+// --- rules.hangedTurn: the Hanged Man's bonus is an extra turn ---
+
+const EXTRA = { rules: { hangedTurn: true } };
+
+test('Hanged Man (extra turn): back by the card, then the same player takes a whole new turn', () => {
+  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11 }, { config: EXTRA }));
+  g = playDrawnNumber(g, { unit: 'p0-s1' });
+  assert.equal(pos(g, 'p0-s1'), 8);
+  assert.equal(g.current, 0);
+  assert.equal(g.drawn, null);
+  assert.equal(g.hanged, null);
+  g = drawCard(g);
+  assert.equal(g.drawn, 1);
+  assert.ok(currentMoves(g).length > 1, 'any unit can move on the extra turn');
+  g = playDrawnNumber(g, { unit: 'p0-s2' });
+  assert.equal(g.current, 1);
+});
+
+test('Hanged Man (extra turn): no backward move after draw: it cannot be used', () => {
+  assert.ok(!canUsePower(playing(POWERS.HANGED_MAN, {}, { config: EXTRA })));
+});
+
+test('Hanged Man (extra turn, before draw): a Joker drafts and the turn ends, no extra turn', () => {
+  let g = usePower(gameWith({ 'p0-s1': 10 }, {
+    config: { powerTiming: 'beforeDraw', ...EXTRA },
+    moveDecks: [{ draw: [JOKER, 2], discard: [] }, { draw: [1], discard: [] }],
+    held: [POWERS.HANGED_MAN, null],
+    powerDeck: [POWERS.TOWER, POWERS.HERMIT],
+  }));
+  g = playDraft(g, 0);
+  assert.equal(g.current, 1);
+});
