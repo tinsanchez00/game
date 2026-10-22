@@ -96,3 +96,57 @@ export const TEXT = {
     extraTurn: (team) => `${team} takes an extra turn`,
   },
 };
+
+// Start and game-mode screens (placeholder copy).
+export const MENU = {
+  gameName: '[Game name]',
+  tagline: 'A race inspired by the Royal Game of Ur',
+  quick: 'Quick game',
+  mode: 'Game mode',
+  continue: 'Continue last game',
+  quickHint: 'Quick game: standard rules, 6 units each',
+  back: 'Back',
+  start: 'Start',
+  customize: 'Customize',
+  changed: 'changed',
+  changedMark: 'changed',
+  preset: {
+    standard: { name: 'Standard' },
+    short: { name: 'Short game' },
+    noPowers: { name: 'No powers' },
+    earlierPowers: { name: 'Earlier powers' },
+    twoJokers: { name: 'Two Jokers' },
+    urTowers: { name: 'Ur towers' },
+  },
+  field: {
+    units: 'Units each',
+    powers: 'Powers',
+    timing: 'Use a power',
+    lovers: 'The Lovers',
+    hanged: 'The Hanged Man',
+    jokers: 'Jokers in each deck',
+    commanderLock: 'Commander lock',
+    escort: 'Escort',
+    towersProtect: 'Towers protect',
+    towerExtraTurn: 'Towers give another turn',
+    exactAscend: 'Exact ascension',
+  },
+  value: {
+    timing: { afterDraw: 'After draw', beforeDraw: 'Before draw' },
+    lovers: { jump: 'Jump', pairing: 'Pairing' },
+    hanged: { extra: 'Extra turn', forward: 'Forward card' },
+  },
+  /** One line describing a settings object. */
+  summary: (s) => {
+    const parts = [`${s.units} units each`, s.powers ? 'all five powers' : 'no powers', `${s.jokers} Joker${s.jokers === 1 ? '' : 's'}`];
+    if (s.powers && s.timing !== 'afterDraw') parts.push('powers before draw');
+    if (s.powers && s.lovers !== 'jump') parts.push('the Lovers: Pairing');
+    if (s.powers && s.hanged !== 'extra') parts.push('the Hanged Man: Forward card');
+    if (s.towerExtraTurn) parts.push('towers give another turn');
+    if (!s.commanderLock) parts.push('no commander lock');
+    if (!s.escort) parts.push('no escort');
+    if (!s.towersProtect) parts.push('towers don\'t protect');
+    if (!s.exactAscend) parts.push('any card can ascend');
+    return parts.join(' · ');
+  },
+};

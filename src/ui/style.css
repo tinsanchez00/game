@@ -341,3 +341,38 @@ button:focus-visible { outline: 2px solid var(--shell-bright); outline-offset: 2
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* --- start and game-mode screens --- */
+.menu { justify-content: flex-start; }
+.menu.start { justify-content: space-between; align-items: center; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.menu.start .topbar { align-self: stretch; }
+.title-block { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.crest { width: 64px; height: 64px; fill: var(--team-gold); stroke: var(--team-gold-rim); stroke-width: 0.9; stroke-linejoin: round; }
+.game-title { margin: 0; font-family: var(--display); font-size: 34px; font-weight: 700; letter-spacing: 0.08em; color: var(--gold); text-align: center; }
+.tagline { margin: 0; font-style: italic; font-size: 15px; color: var(--muted); text-align: center; }
+.menu-buttons { align-self: stretch; display: flex; flex-direction: column; gap: 12px; padding: 0 24px; }
+.menu-buttons.bottom { margin-top: auto; padding: 0; }
+.btn.big { min-height: 56px; font-size: 16px; letter-spacing: 0.08em; }
+.link { min-height: 44px; border: none; background: none; color: var(--muted); font-size: 14px; text-decoration: underline; cursor: pointer; }
+.hint { margin: 0; font-size: 12px; color: var(--muted); text-align: center; }
+.menu-head { display: flex; align-items: center; gap: 12px; }
+.icon-btn { width: 44px; height: 44px; border: 1px solid var(--gold-dim); border-radius: 6px; background: none; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.chev { width: 20px; height: 20px; fill: none; stroke: var(--gold); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.screen-title { margin: 0; font-family: var(--display); font-size: 22px; font-weight: 700; letter-spacing: 0.06em; color: var(--gold); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip.on { background: var(--gold); border-color: var(--gold); color: var(--lapis-deep); font-weight: 500; }
+.mode-summary { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid #3A4A7A; border-radius: 8px; background: #1A2A57; }
+.mode-name { font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--gold); }
+.mode-desc { font-size: 13px; color: var(--muted); }
+.customize { display: flex; flex-direction: column; border-top: 1px solid #3A4A7A; }
+.customize-toggle { min-height: 48px; padding: 0; border: none; background: none; color: var(--gold); font-size: 15px; font-weight: 500; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+.field { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+.field-name { font-size: 15px; display: flex; align-items: center; gap: 6px; }
+.changed { width: 7px; height: 7px; border-radius: 4px; background: var(--gold); }
+.seg { display: flex; border: 1.5px solid var(--gold-dim); border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+.seg-opt { min-width: 48px; min-height: 36px; padding: 0 10px; border: none; background: none; color: var(--shell); font-size: 13px; cursor: pointer; }
+.seg-opt.on { background: var(--gold); color: var(--lapis-deep); font-weight: 500; }
+.switch { position: relative; width: 50px; height: 30px; padding: 0; border: 1.5px solid var(--gold-dim); border-radius: 15px; background: none; flex-shrink: 0; cursor: pointer; }
+.switch span { position: absolute; left: 3px; top: 2.5px; width: 22px; height: 22px; border-radius: 11px; background: var(--gold-dim); }
+.switch.on { border-color: var(--gold); background: var(--gold); }
+.switch.on span { left: auto; right: 3px; background: var(--lapis-deep); }

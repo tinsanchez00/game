@@ -1,9 +1,7 @@
 // DOM wiring: renders the model, turns taps into actions, keeps the current
 // game in this browser so a refresh doesn't lose it.
 
-import { createGame } from '../rules/index.js';
-import { initModel, update } from './controller.js';
-import { view } from './view.js';
+import { initShell, updateShell, viewShell } from './shell.js';
 
 const STORE_KEY = 'board-game-test-v5';
 
@@ -26,10 +24,11 @@ function save(model) {
 }
 
 export function startApp(root) {
-  let model = load() ?? initModel(createGame());
+  // Opens on the start screen; a saved game can be continued from there.
+  let shell = initShell(load());
 
   const render = () => {
-    root.innerHTML = view(model);
+    root.innerHTML = viewShell(shell);
   };
 
   root.addEventListener('click', (event) => {
@@ -40,11 +39,11 @@ export function startApp(root) {
     if (el.dataset.index !== undefined) action.index = Number(el.dataset.index);
     if (el.dataset.value !== undefined) action.value = el.dataset.value;
     try {
-      model = update(model, action);
+      shell = updateShell(shell, action);
     } catch (err) {
       console.error(err);
     }
-    save(model);
+    if (shell.play) save(shell.play);
     render();
   });
 
