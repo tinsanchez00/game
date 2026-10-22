@@ -318,29 +318,3 @@ test('the Lovers: the card moves as usual, then a line, Jump and Stay offer the 
   assert.equal(R.getUnit(stayed.game, 'p0-s1').pos, 7);
   assert.equal(interactions(stayed).phase, 'handoff');
 });
-
-test('the Lovers with a card that has no move: pick which unit jumps, then Jump', () => {
-  // Soldier and commander share cell 13 and both see the soldier on 14; a 4 can't be played.
-  const base = R.createGame({ seed: 3, firstPlayer: 0, config: { soldiers: 2 } });
-  const pos = { 'p0-s1': 13, 'p0-c1': 13, 'p0-s2': 14 };
-  let m = initModel({
-    ...base,
-    held: [R.POWERS.LOVERS, null],
-    units: base.units.map((u) => (u.id in pos ? { ...u, pos: pos[u.id] } : u)),
-    moveDecks: [{ draw: [4, 1], discard: [] }, { draw: [1], discard: [] }],
-  });
-  m = update(update(m, { type: 'draw' }), { type: 'use-power' });
-  let ix = interactions(m);
-  assert.equal(ix.phase, 'loversJump');
-  assert.ok(!ix.canConfirm);
-  assert.match(view(m), /data-action="confirm" disabled/);
-  m = update(m, { type: 'tap', key: R.cellId(0, 13) });
-  assert.deepEqual(interactions(m).options.sort(), ['commander', 'soldier']);
-  m = update(m, { type: 'option', value: 'commander' });
-  ix = interactions(m);
-  assert.ok(ix.canConfirm);
-  assert.equal(ix.dest, R.cellId(0, 14));
-  m = update(m, { type: 'confirm' });
-  assert.equal(R.getUnit(m.game, 'p0-c1').pos, 14);
-  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 13);
-});

@@ -55,11 +55,9 @@ export const LEVELS = Object.freeze({
 });
 
 // Continuations after a move: END (the turn ends), the Hanged Man's forward
-// card for unit index c (c = -1: any unit), or a "line" Lovers jump for unit
-// u (jumpFor(u); JUMP_ANY: any unit). JUMP_MOVER: a jump for the unit that
-// makes the move.
+// card for unit index c >= 0, or a "line" Lovers jump for unit u (jumpFor(u)).
+// JUMP_MOVER: a jump for the unit that makes the move.
 const END = -2;
-const JUMP_ANY = -3;
 const JUMP_MOVER = -1000;
 const jumpFor = (u) => -4 - u;
 
@@ -137,8 +135,8 @@ function endTurn(fs, q, depth, ctx) {
 
 function proceed(fs, q, cont, depth, ctx) {
   if (cont === END) return endTurn(fs, q, depth, ctx);
-  if (cont >= -1) return forwardCard(fs, q, cont, depth, ctx);
-  return loversJump(fs, q, cont === JUMP_ANY ? -1 : -4 - cont, depth, ctx);
+  if (cont >= 0) return forwardCard(fs, q, cont, depth, ctx);
+  return loversJump(fs, q, -4 - cont, depth, ctx);
 }
 
 /** Moves unit i to path position t without captures; returns an undo record. */
@@ -154,7 +152,7 @@ function unjump(fs, rec) {
   place(fs, rec.i, rec.from);
 }
 
-/** q's best "line" Lovers jump for `unit` (-1: any unit), or none; then the turn ends. */
+/** q's best "line" Lovers jump for `unit`, or none; then the turn ends. */
 function loversJump(fs, q, unit, depth, ctx) {
   const isBetter = better(ctx, q);
   let best = endTurn(fs, q, depth, ctx);
@@ -276,10 +274,10 @@ function resolveCard(fs, q, k, depth, ctx) {
   }
   if (fs.powersOn && !fs.beforeDraw && usable(fs.held[q])) {
     const p = fs.held[q];
-    // After draw, free powers can't be used on a Joker (it drafts), and the
-    // Hanged Man needs a backward move for a number card.
+    // After draw, free powers can't be used on a Joker (it drafts) and need a
+    // move for a number card (backward for the Hanged Man).
     const free = p === HM || (p === LOVERS && fs.loversLine);
-    if (!(free && k === fs.J) && (p !== HM || genMoves(fs, q, fs.values[k], true).length > 0)) {
+    if (!free || (k < fs.J && genMoves(fs, q, fs.values[k], p === HM).length > 0)) {
       for (const t of powerTargets(fs, q, p)) {
         const v = afterPower(fs, q, p, t, k, depth, ctx);
         if (isBetter(v, best)) best = v;
@@ -289,15 +287,15 @@ function resolveCard(fs, q, k, depth, ctx) {
   return best;
 }
 
-/** The Hanged Man's backward card k; no backward move: the turn ends. */
+/** The Hanged Man's backward card k; no backward move: the turn ends (a Joker drafts, no forward card). */
 function hangedCard(fs, q, k, depth, ctx) {
-  if (k === fs.J) return draftValue(fs, q, -1, depth, ctx);
+  if (k === fs.J) return draftValue(fs, q, END, depth, ctx);
   const v = bestMove(fs, q, fs.values[k], true, -1, END, depth, ctx);
   return v === undefined ? endTurn(fs, q, depth, ctx) : v;
 }
 
 /**
- * The Hanged Man's forward card, moving unit `unit` (-1: any). The extra
+ * The Hanged Man's forward card, moving unit `unit`. The extra
  * draw uses up a turn of look-ahead.
  */
 function forwardCard(fs, q, unit, depth0, ctx) {
@@ -346,13 +344,14 @@ function campsite(fs, q, unit, cont, depth0, ctx) {
   return value;
 }
 
-/** The "line" Lovers' card k: a normal move, then the mover's jump; Joker or no move: any unit's jump. */
+/**
+ * The "line" Lovers' card k: a normal move, then the mover's jump. (Before
+ * draw: a Joker drafts as usual, and no move ends the turn.)
+ */
 function loversCard(fs, q, k, depth, ctx) {
-  if (k < fs.J) {
-    const v = bestMove(fs, q, fs.values[k], false, -1, JUMP_MOVER, depth, ctx);
-    if (v !== undefined) return v;
-  }
-  return loversJump(fs, q, -1, depth, ctx);
+  if (k === fs.J) return jokerValue(fs, q, END, depth, ctx);
+  const v = bestMove(fs, q, fs.values[k], false, -1, JUMP_MOVER, depth, ctx);
+  return v === undefined ? endTurn(fs, q, depth, ctx) : v;
 }
 
 /** q uses power p on target t; k is the drawn card slot, or -1 before drawing. */
@@ -520,11 +519,11 @@ export function powerBot(options = {}) {
         }
         if (opts.length === 0) {
           // No move: a Hanged Man backward card with no move ends the turn.
-          opts.push({ action: { kind: 'pass' }, value: () => (back ? endTurn(fs, me, depth, ctx) : proceed(fs, me, cont === JUMP_MOVER ? JUMP_ANY : cont, depth, ctx)) });
+          opts.push({ action: { kind: 'pass' }, value: () => (back ? endTurn(fs, me, depth, ctx) : proceed(fs, me, cont === JUMP_MOVER ? END : cont, depth, ctx)) });
         }
       } else {
         // Joker: draft one of the visible cards, or pass when drafting can't happen.
-        const jokerCont = back ? -1 : cont;
+        const jokerCont = back ? END : cont;
         const choices = draftOptions(state);
         if (choices.length === 0) {
           opts.push({ action: { kind: 'passJoker' }, value: () => proceed(fs, me, jokerCont, depth, ctx) });

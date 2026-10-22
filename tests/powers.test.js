@@ -109,7 +109,7 @@ test('Hanged Man (before draw): a card with no backward move spends it and ends 
   assert.deepEqual(g.moveDecks[0].draw, [1], 'no forward card is drawn');
 });
 
-test('Hanged Man (before draw) on a joker: draft, then the forward card is a normal move, then the turn ends', () => {
+test('Hanged Man (before draw) on a joker: it drafts as usual, with no forward card', () => {
   const base = gameWith({ 'p0-s1': 10 }, {
     config: { powerTiming: 'beforeDraw' },
     moveDecks: [{ draw: [JOKER, 2], discard: [] }, { draw: [1], discard: [] }],
@@ -121,14 +121,10 @@ test('Hanged Man (before draw) on a joker: draft, then the forward card is a nor
   assert.deepEqual(draftOptions(g), [POWERS.TOWER, POWERS.HERMIT]);
   g = playDraft(g, 0);
   assert.equal(g.held[0], POWERS.TOWER);
-  assert.equal(g.current, 0);
-  assert.deepEqual(g.hanged, { stage: 'forward', unit: null });
-  g = drawCard(g);
-  assert.ok(!canUsePower(g), 'the drafted power waits for your next turn');
-  assert.ok(currentMoves(g).length > 1);
-  g = playDrawnNumber(g, { unit: 'p0-s1' });
-  assert.equal(pos(g, 'p0-s1'), 12);
   assert.equal(g.current, 1);
+  assert.equal(g.hanged, null);
+  assert.equal(pos(g, 'p0-s1'), 10);
+  assert.deepEqual(g.moveDecks[0].draw, [2], 'no forward card is drawn');
 });
 
 test('Hanged Man: a joker as the forward card drafts instead of moving', () => {

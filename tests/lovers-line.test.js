@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  JOKER, POWERS, canUsePower, drawCard, loversJumps, playDrawnNumber, playLoversJump,
+  JOKER, POWERS, canUsePower, drawCard, loversJumps, playDraft, playDrawnNumber, playLoversJump,
   powerUseChoices, usePower,
 } from '../src/rules/index.js';
 import { gameWith, pos } from './helpers.js';
@@ -86,35 +86,41 @@ test('line Lovers (after draw): it can not be used on a drawn Joker', () => {
   assert.deepEqual(powerUseChoices(g), []);
 });
 
-test('line Lovers (before draw): a Joker drawn after using it is spent; any unit that sees an ally may jump', () => {
-  const g = usePower(gameWith({ 'p0-s1': 4, 'p0-s2': 10, 'p0-s3': 13, 'p0-s4': 14 }, {
+test('line Lovers (before draw): a Joker drawn after using it drafts as usual, with no jump', () => {
+  let g = usePower(gameWith({ 'p0-s1': 4, 'p0-s2': 10 }, {
     config: { ...LINE, powerTiming: 'beforeDraw' },
     moveDecks: [{ draw: [JOKER, 1], discard: [] }, { draw: [1], discard: [] }],
     held: [POWERS.LOVERS, null],
     powerDeck: [POWERS.TOWER, POWERS.HERMIT],
   }), {});
-  assert.equal(g.drawn, null);
+  assert.equal(g.drawn, JOKER);
   assert.equal(g.held[0], null);
-  assert.deepEqual(g.lovers, { stage: 'jump', unit: null });
-  assert.deepEqual(loversJumps(g), [{ unit: 'p0-s1', to: 10 }, { unit: 'p0-s3', to: 14 }]);
-  const after = playLoversJump(g, { unit: 'p0-s3', to: 14 });
-  assert.equal(pos(after, 'p0-s3'), 14);
-  assert.equal(after.current, 1);
+  assert.equal(g.lovers, null);
+  g = playDraft(g, 0);
+  assert.equal(g.held[0], POWERS.TOWER);
+  assert.equal(g.current, 1);
+  assert.equal(pos(g, 'p0-s1'), 4);
 });
 
-test('line Lovers: a number card with no valid move: any unit that sees an ally may jump', () => {
+test('line Lovers (after draw): it needs a valid move for the drawn card', () => {
   // One soldier and the commander, both in the end lane: a 4 can't be played.
   const config = { ...LINE, soldiers: 1 };
-  const g = usePower(playing({ 'p0-s1': 13, 'p0-c1': 14 }, { deck: [4, 1], config }), {});
-  assert.deepEqual(g.lovers, { stage: 'jump', unit: null });
-  assert.deepEqual(loversJumps(g), [{ unit: 'p0-s1', to: 14 }]);
+  const g = playing({ 'p0-s1': 13, 'p0-c1': 14 }, { deck: [4, 1], config });
+  assert.ok(!canUsePower(g));
 });
 
-test('line Lovers: no move and no jump anywhere ends the turn at once', () => {
-  const config = { ...LINE, soldiers: 1 };
-  const g = usePower(playing({ 'p0-s1': 13, 'p0-c1': 12 }, { deck: [4, 1], config }), {});
+test('line Lovers (before draw): a drawn card with no move ends the turn, with no jump', () => {
+  const config = { ...LINE, soldiers: 1, powerTiming: 'beforeDraw' };
+  let g = usePower(gameWith({ 'p0-s1': 13, 'p0-c1': 14 }, {
+    config,
+    moveDecks: [{ draw: [4, 1], discard: [] }, { draw: [1], discard: [] }],
+    held: [POWERS.LOVERS, null],
+    powerDeck: [POWERS.TOWER],
+  }), {});
+  assert.equal(g.drawn, 4);
+  g = playDrawnNumber(g, null);
   assert.equal(g.current, 1);
-  assert.equal(g.lovers, null);
+  assert.equal(pos(g, 'p0-s1'), 13);
 });
 
 test('line Lovers: a campsite landing resolves its card first, then the jump', () => {

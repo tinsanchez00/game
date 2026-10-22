@@ -23,7 +23,7 @@
 
 import { JOKER, POWERS, isNumberCard } from './cards.js';
 import { DUD, POWER_TIMINGS } from './config.js';
-import { continueTurn, endTurn, legalMoves, playNumberCard, startLoversJump } from './moves.js';
+import { continueTurn, endTurn, legalMoves, playNumberCard } from './moves.js';
 import { applyPower, powerChoices } from './powers.js';
 import { shuffle } from './random.js';
 
@@ -139,9 +139,12 @@ export function canUsePower(state) {
   if (state.drawn === null) return false;
   // Free powers use the drawn card: a drawn Joker drafts instead.
   if (!isNumberCard(state.drawn) && isFreePower(state, power)) return false;
-  // After draw, the Hanged Man needs a backward move for a drawn number card.
+  // After draw, a free power needs a move for the drawn card (backward for the Hanged Man).
   if (power === POWERS.HANGED_MAN) {
     return legalMoves(state, state.current, state.drawn, undefined, { backward: true, only: null }).length > 0;
+  }
+  if (isFreePower(state, power)) {
+    return legalMoves(state, state.current, state.drawn, undefined, { backward: false, only: null }).length > 0;
   }
   return true;
 }
@@ -163,7 +166,8 @@ export function powerUseChoices(state) {
  * (drawn first with the before-draw timing; if that card has no backward
  * move the turn ends), and a second card moves the same unit forward.
  * The "line" Lovers is free too: the card moves a unit as usual, then the
- * jump stage follows (moves.js).
+ * jump stage follows (moves.js). Either bonus (forward card, jump) needs the
+ * turn's card to have moved a unit.
  */
 export function usePower(state, args = {}) {
   if (!canUsePower(state)) throw new Error('usePower: no power can be used now');
@@ -180,12 +184,12 @@ export function usePower(state, args = {}) {
   }
   if (power === POWERS.LOVERS && state.config.rules.loversLine) {
     const s = state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? drawCard(used) : used;
-    // A number card with a move is played as usual. Otherwise (no move; or a Joker,
-    // which only the before-draw timing can bring) the card is spent and any unit may jump.
+    // The card is played as usual; the jump follows only a card move. (Before draw,
+    // a Joker then drafts as usual and a card with no move ends the turn.)
     if (isNumberCard(s.drawn) && legalMoves(s, player, s.drawn).length > 0) {
       return { ...s, lovers: { stage: 'move' } };
     }
-    return startLoversJump(s, null);
+    return s;
   }
   return endTurn(used);
 }

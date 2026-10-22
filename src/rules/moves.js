@@ -6,13 +6,13 @@
 // Turn-continuation fields on the state (see state.js):
 //   hanged     { stage: 'back' | 'forward', unit } while a Hanged Man use is
 //              resolving: 'back' moves backward, then 'forward' draws a card
-//              that moves `unit` (any unit when null)
+//              that moves `unit` (only after a backward move)
 //   campsite   { unit } when `drawn` was picked from the discard pile by a
 //              campsite landing; it moves `unit` forward
 //   lovers     { stage: 'move' } while the "line" Lovers' card move is
-//              resolving (rules.loversLine); then { stage: 'jump', unit }:
-//              `unit` (any of the player's units when null) may jump onto
-//              the ally it sees ahead in its lane (loversJumps)
+//              resolving (rules.loversLine); then, after a card move,
+//              { stage: 'jump', unit }: `unit` may jump onto the ally it sees
+//              ahead in its lane (loversJumps)
 //   bonusTurn  set when a move earned another turn (rules.towerExtraTurn)
 
 import { HOME, geometry } from './board.js';
@@ -164,12 +164,12 @@ export function continueTurn(state, landing = null) {
     const pick = pickFromDiscard(done);
     if (pick) return { ...done, rng: pick.rng, drawn: pick.card, campsite: { unit: landing.unit } };
   }
-  if (done.hanged?.stage === 'back') {
+  // A free power's bonus needs a unit that moved with the card.
+  if (done.hanged?.stage === 'back' && done.hanged.unit !== null) {
     return { ...done, hanged: { stage: 'forward', unit: done.hanged.unit } };
   }
-  if (done.lovers?.stage === 'move') {
-    return startLoversJump(done, landing?.unit ?? state.campsite?.unit ?? null);
-  }
+  const mover = landing?.unit ?? state.campsite?.unit ?? null;
+  if (done.lovers?.stage === 'move' && mover !== null) return startLoversJump(done, mover);
   return endTurn(done);
 }
 
