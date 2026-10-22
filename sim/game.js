@@ -20,6 +20,7 @@ function blankPowerStats() {
     drafted: 0, used: 0, noEffect: 0, enemyKilled: 0, ownKilled: 0,
     enemyProgressLost: 0, ownProgressLost: 0, swing: 0, usedBy: [0, 0],
     heldTurns: 0, // turns started holding this card
+    discarded: 0, // held, then replaced unused by a different card at a Joker draft
   }]));
 }
 
@@ -165,6 +166,8 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
     } else if (a.kind === 'draft') {
       const kept = s.powerDeck[a.index];
       powers[kept].drafted += 1;
+      const old = s.held[p];
+      if (old && old !== kept) powers[old].discarded += 1;
       s = playDraft(s, a.index);
     } else if (a.kind === 'passJoker') {
       if (!before.hanged && !before.campsite) wasted[p] += 1;

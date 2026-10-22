@@ -346,3 +346,27 @@ test('turn choices are recorded only when asked, one class per bot turn', () => 
   assert.equal(n('none') + n('one') + n('real'), on.turns);
   assert.equal(on.turns, off.turns, 'measuring changes nothing in the game');
 });
+
+test('a held power replaced at a Joker draft by a different card counts as discarded', () => {
+  // Never uses powers, always keeps a dud when one is offered.
+  const scripted = {
+    act(st) {
+      if (st.drawn === null) return { kind: 'draw' };
+      if (R.isNumberCard(st.drawn)) {
+        const moves = R.currentMoves(st);
+        return moves.length ? { kind: 'move', move: moves[0] } : { kind: 'pass' };
+      }
+      const opts = R.draftOptions(st);
+      return opts.length ? { kind: 'draft', index: Math.max(0, opts.indexOf('dud')) } : { kind: 'passJoker' };
+    },
+  };
+  let discarded = 0;
+  let heldDevil = 0;
+  for (const seed of [1, 2, 3]) {
+    const r = playGame({ config: { soldiers: 2, powerDeck: ['devil', 'devil', 'dud', 'dud'] }, seed, bots: [scripted, scripted] });
+    assert.equal(r.powers.devil.used, 0);
+    discarded += r.powers.devil.discarded;
+    heldDevil += r.powers.devil.heldTurns;
+  }
+  assert.ok(heldDevil > 0 && discarded > 0, `held ${heldDevil}, discarded ${discarded}`);
+});

@@ -100,6 +100,12 @@ function powerSummary(done, teamSize) {
       ownProgressLostPerUse: used ? t((x) => x.ownProgressLost) / used : null,
       swingPerUse: used ? t((x) => x.swing) / used : null,
       heldShare: t((x) => x.heldTurns ?? 0) / sum((r) => r.turns),
+      discardedPerGame: t((x) => x.discarded ?? 0) / n,
+      // Of the times this power left a player's hand: share lost unused to a draft.
+      discardShare: (() => {
+        const lost = t((x) => x.discarded ?? 0);
+        return lost + used ? lost / (lost + used) : null;
+      })(),
     };
   }
   return {
