@@ -158,7 +158,7 @@ export function searchBot({ depth = 2, weights = DEFAULT_WEIGHTS } = {}) {
   return {
     name: `search-d${depth}`,
     choose(state) {
-      if (state.hangedDraw) throw new Error('searchBot: backward moves are not supported');
+      if (state.hanged) throw new Error('searchBot: backward moves are not supported');
       const fs = buildFast(state);
       const ctx = { w, endOdds: endWaitTable(fs) };
       const d = state.drawn;

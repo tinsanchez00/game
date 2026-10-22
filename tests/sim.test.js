@@ -16,6 +16,11 @@ function rng(seed) {
   };
 }
 
+// The simulator doesn't model campsites or the Hanged Man yet (it rejects
+// them), so every simulated game here leaves them out.
+const SIM_POWERS = R.POWER_IDS.filter((id) => id !== 'hanged-man');
+const supported = (c = {}) => ({ ...c, board: { campsites: [], ...(c.board ?? {}) }, powerDeck: c.powerDeck ?? SIM_POWERS });
+
 const CONFIGS = [
   { powers: false },
   { powers: false, maxPerCell: 1, commanders: 0, soldiers: 7 },
@@ -23,7 +28,7 @@ const CONFIGS = [
   { powers: false, rules: { exactAscend: false, towersProtect: false, escort: false } },
   { powers: false, rules: { towerExtraTurn: true, commanderLock: false } },
   { powers: false, moveDeck: [1, 2, 5, 6, R.JOKER], board: { startLane: 3, middleLane: 10, endLane: 3, towers: [3, 9, 16] } },
-];
+].map(supported);
 
 /** A random reachable-looking position: units scattered, stack limits kept. */
 function randomPosition(config, random) {
@@ -101,8 +106,8 @@ test('bots finish games under every test setting', () => {
 });
 
 test('games are reproducible from the seed', () => {
-  const a = playGame({ config: { powers: false }, seed: 7, bots: [searchBot(), searchBot()] });
-  const b = playGame({ config: { powers: false }, seed: 7, bots: [searchBot(), searchBot()] });
+  const a = playGame({ config: supported({ powers: false }), seed: 7, bots: [searchBot(), searchBot()] });
+  const b = playGame({ config: supported({ powers: false }), seed: 7, bots: [searchBot(), searchBot()] });
   assert.deepEqual(a, b);
 });
 
@@ -114,7 +119,7 @@ test('the search bot beats a random bot', () => {
     const bots = [];
     bots[me] = searchBot();
     bots[1 - me] = randomBot(rng(seed));
-    if (playGame({ config: { powers: false }, seed, bots }).winner === me) wins += 1;
+    if (playGame({ config: supported({ powers: false }), seed, bots }).winner === me) wins += 1;
   }
   assert.ok(wins >= 34, `won ${wins}/${games}`);
 });
@@ -126,7 +131,7 @@ const POWER_CONFIGS = [
   { powerTiming: 'beforeDraw' },
   { soldiers: 4, rules: { towersProtect: false } },
   { maxPerCell: 3, commanders: 2, soldiers: 3 },
-];
+].map(supported);
 
 const targetKey = (s, args) => JSON.stringify(Object.keys(args).sort().map((k) => {
   const u = R.getUnit(s, args[k]);
@@ -171,9 +176,9 @@ test('fast backward moves match the engine', () => {
   const random = rng(321);
   let checked = 0;
   for (let n = 0; n < 300; n += 1) {
-    const s0 = randomPosition({ powers: false }, random);
+    const s0 = randomPosition(supported({ powers: false }), random);
     if (s0.winner !== null) continue;
-    const s = { ...s0, hangedDraw: true };
+    const s = { ...s0, hanged: { stage: 'back', unit: null } };
     const fs = buildFast(s);
     for (const d of fs.values) {
       const engine = new Set(R.legalMoves(s, s.current, d).map((m) => key(s, m)));
@@ -199,7 +204,7 @@ test('power bots finish games at both levels and both timings, using every power
     for (const powerTiming of ['afterDraw', 'beforeDraw']) {
       for (const seed of [1, 2, 3]) {
         const r = playGame({
-          config: { powerTiming, soldiers: 4 },
+          config: supported({ powerTiming, soldiers: 4 }),
           seed,
           bots: [powerBot({ level, random: rng(seed) }), powerBot({ level, random: rng(seed + 9) })],
         });
@@ -209,7 +214,7 @@ test('power bots finish games at both levels and both timings, using every power
       }
     }
   }
-  assert.equal(used.size, R.POWER_IDS.length, [...used].join());
+  assert.deepEqual([...used].sort(), [...SIM_POWERS].sort());
 });
 
 test('the strong power bot beats the average one', () => {
@@ -220,12 +225,18 @@ test('the strong power bot beats the average one', () => {
     const bots = [];
     bots[me] = powerBot({ level: 'strong' });
     bots[1 - me] = powerBot({ level: 'average', random: rng(seed) });
-    if (playGame({ config: { soldiers: 4 }, seed, bots }).winner === me) wins += 1;
+    if (playGame({ config: supported({ soldiers: 4 }), seed, bots }).winner === me) wins += 1;
   }
   assert.ok(wins >= 24, `won ${wins}/${games}`);
 });
 
 test('power games are reproducible from the seed', () => {
-  const run = () => playGame({ config: {}, seed: 11, bots: [powerBot({ level: 'average', random: rng(5) }), powerBot({ level: 'strong' })] });
+  const run = () => playGame({ config: supported(), seed: 11, bots: [powerBot({ level: 'average', random: rng(5) }), powerBot({ level: 'strong' })] });
   assert.deepEqual(run(), run());
+});
+
+test('the simulator rejects campsites and the Hanged Man until it models them', () => {
+  const bots = [randomBot(rng(1)), randomBot(rng(2))];
+  assert.throws(() => playGame({ config: { powers: false }, seed: 1, bots }), /campsites/);
+  assert.throws(() => playGame({ config: { board: { campsites: [] } }, seed: 1, bots }), /Hanged Man/);
 });

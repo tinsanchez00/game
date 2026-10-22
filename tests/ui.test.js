@@ -7,14 +7,15 @@ import { view } from '../src/ui/view.js';
 
 // --- layout ---------------------------------------------------------------
 
-test('the board grid has 20 cells and 4 gaps for either viewer', () => {
+test('the board grid has 19 cells and 8 gaps for either viewer', () => {
   for (const viewer of [0, 1]) {
     const slots = boardSlots(viewer);
-    assert.equal(slots.length, 24);
+    assert.equal(slots.length, 27);
     const cells = slots.filter((s) => !s.gap);
-    assert.equal(cells.length, 20);
-    assert.equal(new Set(cells.map((s) => s.key)).size, 20);
-    assert.equal(cells.filter((s) => s.tower).length, 5);
+    assert.equal(cells.length, 19);
+    assert.equal(new Set(cells.map((s) => s.key)).size, 19);
+    assert.equal(cells.filter((s) => s.tower).length, 3);
+    assert.deepEqual(cells.filter((s) => s.campsite).map((s) => s.key), ['shared-2']);
   }
 });
 
@@ -27,6 +28,7 @@ test('every path position lands on the grid slot with the matching cell', () => 
         const slot = slots.find((s) => s.row === row && s.col === col);
         assert.equal(slot.key, R.cellId(player, pos), `viewer ${viewer} player ${player} pos ${pos}`);
         assert.equal(slot.tower, R.isTower(pos));
+        assert.equal(slot.campsite, R.isCampsite(pos));
       }
     }
   }
@@ -115,6 +117,8 @@ test('bots can play complete games through the screen without errors', () => {
       assert.ok(html.includes('class="board"'));
       const action = botAction(m, pick, used);
       seen.add(interactions(m).phase);
+      if (m.game.campsite) seen.add('campsite card');
+      if (m.game.hanged?.stage === 'forward') seen.add('hanged forward');
       const next = update(m, action);
       assert.notEqual(next, m, `seed ${seed}: action ${JSON.stringify(action)} did nothing`);
       m = next;
@@ -123,7 +127,7 @@ test('bots can play complete games through the screen without errors', () => {
     assert.ok(view(m).includes('overlay'));
     assert.ok(m.game.units.filter((u) => u.player === m.game.winner).every((u) => u.pos === R.ASCENDED));
   }
-  for (const phase of ['handoff', 'draw', 'move', 'stuck', 'joker', 'draft', 'lovers', 'devil']) {
+  for (const phase of ['handoff', 'draw', 'move', 'stuck', 'joker', 'draft', 'lovers', 'devil', 'campsite card', 'hanged forward']) {
     assert.ok(seen.has(phase), `phase ${phase} never came up`);
   }
   for (const power of Object.values(R.POWERS)) assert.ok(used.has(power), `${power} never used`);
@@ -148,10 +152,10 @@ test('selecting a unit previews its destination and any capture', () => {
   m = update(m, { type: 'draw' });
   m = update(m, { type: 'tap', key: unitKey(m.game, R.getUnit(m.game, 'p0-s1')) });
   const ix = interactions(m);
-  assert.equal(ix.dest, 'shared-2');
+  assert.equal(ix.dest, 'shared-3');
   assert.deepEqual(ix.victims, ['p1-s1']);
   assert.ok(view(m).includes('cap'));
-  m = update(m, { type: 'tap', key: 'shared-2' });
+  m = update(m, { type: 'tap', key: 'shared-3' });
   assert.equal(R.getUnit(m.game, 'p1-s1').pos, R.HOME);
   assert.equal(interactions(m).phase, 'handoff');
 });
@@ -162,7 +166,7 @@ test('a commander with an escort offers both options', () => {
     moveDecks: [{ draw: [2], discard: [] }, { draw: [1], discard: [] }],
   });
   m = update(m, { type: 'draw' });
-  m = update(m, { type: 'tap', key: 'shared-2' });
+  m = update(m, { type: 'tap', key: 'shared-3' });
   const ix = interactions(m);
   assert.deepEqual(ix.options.sort(), ['commander', 'commander+escort', 'soldier']);
   m = update(m, { type: 'option', value: 'commander+escort' });
@@ -179,7 +183,7 @@ test('The Devil marks the units it would kill before you confirm', () => {
   m = update(m, { type: 'draw' });
   assert.ok(view(m).includes('data-action="use-power"'));
   m = update(m, { type: 'use-power' });
-  m = update(m, { type: 'tap', key: 'shared-4' });
+  m = update(m, { type: 'tap', key: 'shared-5' });
   assert.deepEqual(interactions(m).victims, ['p1-s1']);
   assert.ok(view(m).includes('doomed'));
   m = update(m, { type: 'confirm' });
@@ -219,8 +223,8 @@ test('before draw: the held power is offered instead of drawing', () => {
   assert.ok(!interactions(m).canUsePower);
 });
 
-test('The Hanged Man turns the drawn card into a backward move, then an extra turn', () => {
-  let m = modelWith({ 'p0-s1': 9 }, {
+test('The Hanged Man: back with the drawn card, then the forward card moves the same unit', () => {
+  let m = modelWith({ 'p0-s1': 11, 'p0-s2': 1 }, {
     moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
     held: [R.POWERS.HANGED_MAN, null],
   });
@@ -228,8 +232,35 @@ test('The Hanged Man turns the drawn card into a backward move, then an extra tu
   m = update(m, { type: 'use-power' });
   assert.equal(interactions(m).phase, 'move');
   assert.ok(view(m).includes('move a unit 3 back'));
+  m = update(m, { type: 'tap', key: 'shared-8' });
+  m = update(m, { type: 'confirm' });
+  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 8);
+  assert.equal(interactions(m).phase, 'draw');
+  assert.ok(view(m).includes('draw the forward card'));
+  m = update(m, { type: 'draw' });
+  assert.deepEqual(interactions(m).tappable, ['shared-5'], 'only that unit');
   m = update(m, { type: 'tap', key: 'shared-5' });
   m = update(m, { type: 'confirm' });
-  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 6);
-  assert.equal(interactions(m).phase, 'draw');
+  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 9);
+  assert.equal(interactions(m).phase, 'handoff');
+});
+
+test('landing on the campsite shows the card from your discard pile and moves that unit again', () => {
+  let m = modelWith({ 'p0-s1': 3, 'p0-s2': 1 }, {
+    moveDecks: [{ draw: [2], discard: [] }, { draw: [1], discard: [] }],
+  });
+  assert.ok(view(m).includes('campsite'));
+  m = update(m, { type: 'draw' });
+  m = update(m, { type: 'tap', key: 'p0-3' });
+  m = update(m, { type: 'confirm' });
+  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 5);
+  assert.equal(interactions(m).phase, 'move');
+  assert.deepEqual(interactions(m).tappable, ['shared-2']);
+  const html = view(m);
+  assert.ok(html.includes('Campsite · move that unit 2 again'));
+  assert.ok(html.includes('From discard'));
+  m = update(m, { type: 'tap', key: 'shared-2' });
+  m = update(m, { type: 'confirm' });
+  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 7);
+  assert.equal(interactions(m).phase, 'handoff');
 });

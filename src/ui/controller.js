@@ -215,12 +215,13 @@ export function update(m, action) {
     case 'draw':
       return phase === 'draw' ? { game: R.drawCard(g), ui: freshUi(m.ui.viewer) } : m;
 
-    case 'continue':
-      if (phase === 'jokerPass') {
-        return commit(m, R.passJoker(g), [{ type: 'turnLost', player: g.current }]);
-      }
+    case 'continue': {
+      // Only a turn's own card loses the turn; a Hanged Man or campsite card just doesn't move.
+      const event = { type: g.hanged || g.campsite ? 'noMove' : 'turnLost', player: g.current };
+      if (phase === 'jokerPass') return commit(m, R.passJoker(g), [event]);
       if (phase !== 'stuck') return m;
-      return commit(m, R.playDrawnNumber(g, null), [{ type: 'turnLost', player: g.current }]);
+      return commit(m, R.playDrawnNumber(g, null), [event]);
+    }
 
     case 'joker-draft':
       return phase === 'joker' ? ui({ joker: 'draft', pick: null }) : m;

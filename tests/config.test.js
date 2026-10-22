@@ -30,18 +30,20 @@ test('defaults match the rulebook', () => {
   assert.equal(c.soldiers, 5);
   assert.equal(c.commanders, 1);
   assert.equal(c.maxPerCell, 2);
-  assert.deepEqual({ ...c.board, towers: [...c.board.towers] },
-    { startLane: 4, middleLane: 8, endLane: 2, towers: [4, 8, 14] });
-  assert.ok(Object.isFrozen(c) && Object.isFrozen(c.board.towers));
+  assert.deepEqual({ ...c.board, towers: [...c.board.towers], campsites: [...c.board.campsites] },
+    { startLane: 3, middleLane: 9, endLane: 2, towers: [7, 14], campsites: [5] });
+  assert.ok(Object.isFrozen(c) && Object.isFrozen(c.board.towers) && Object.isFrozen(c.board.campsites));
 });
 
 test('overrides merge into the defaults; lists are replaced', () => {
   const c = R.makeConfig({ soldiers: 3, board: { middleLane: 10, towers: [10, 4] }, rules: { escort: false } });
   assert.equal(c.soldiers, 3);
   assert.equal(c.commanders, 1);
-  assert.equal(c.board.startLane, 4);
+  assert.equal(c.board.startLane, 3);
   assert.equal(c.board.middleLane, 10);
   assert.deepEqual([...c.board.towers], [4, 10]);
+  assert.deepEqual([...c.board.campsites], [5]);
+  assert.deepEqual([...R.makeConfig({ board: { campsites: [9, 6] } }).board.campsites], [6, 9]);
   assert.equal(c.rules.escort, false);
   assert.equal(c.rules.exactAscend, true);
 });
@@ -55,6 +57,9 @@ test('bad settings are rejected with a clear message', () => {
   assert.throws(() => R.makeConfig({ powerDeck: ['the-fool'] }), /unknown power/);
   assert.throws(() => R.makeConfig({ rules: { escort: 'yes' } }), /true or false/);
   assert.throws(() => R.makeConfig({ maxPerCell: 0 }), /maxPerCell/);
+  assert.throws(() => R.makeConfig({ board: { campsites: [15] } }), /outside the path/);
+  assert.throws(() => R.makeConfig({ board: { campsites: [5, 5] } }), /duplicates/);
+  assert.throws(() => R.makeConfig({ board: { campsites: [7] } }), /both a tower and a campsite/);
 });
 
 test('a game carries its settings', () => {
@@ -156,10 +161,10 @@ test('lane lengths set the path, the cell count and ascension', () => {
 });
 
 test('units ascend one past the last cell of a custom path', () => {
-  const g = game({ board: { middleLane: 6, towers: [] } }, { 'p0-s1': 12 });
-  assert.equal(R.geometry(g.config).ascended, 13);
+  const g = game({ board: { middleLane: 6, towers: [] } }, { 'p0-s1': 11 });
+  assert.equal(R.geometry(g.config).ascended, 12);
   assert.ok(has(R.legalMoves(g, 0, 1), 'p0-s1'));
-  assert.equal(pos(R.applyMove(g, { unit: 'p0-s1' }, 1), 'p0-s1'), 13);
+  assert.equal(pos(R.applyMove(g, { unit: 'p0-s1' }, 1), 'p0-s1'), 12);
 });
 
 test('the screen grid follows the board shape', () => {
@@ -204,7 +209,7 @@ test('towersProtect off: units on towers can be captured', () => {
 });
 
 test('towerExtraTurn on: landing on a tower gives another turn', () => {
-  const g = game({ rules: { towerExtraTurn: true } }, { 'p0-s1': 5 });
+  const g = game({ rules: { towerExtraTurn: true } }, { 'p0-s1': 4 });
   assert.equal(R.applyMove(g, { unit: 'p0-s1' }, 3).current, 0);
   assert.equal(R.applyMove(g, { unit: 'p0-s1' }, 2).current, 1);
 });

@@ -243,7 +243,7 @@ export function powerBot(options = {}) {
       return opts;
     }
 
-    const back = Boolean(state.hangedDraw);
+    const back = state.hanged?.stage === 'back' && !state.campsite;
     if (isNumberCard(state.drawn)) {
       const d = state.drawn;
       for (const m of genMoves(fs, me, d, back)) {

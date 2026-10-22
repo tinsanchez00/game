@@ -1,8 +1,18 @@
-// Move generation and resolution for number cards.
+// Move generation and resolution for number cards, and what follows a
+// resolved card within a turn.
 //
 // A move is { unit: <unit id>, escort?: <unit id> }.
+//
+// Turn-continuation fields on the state (see state.js):
+//   hanged     { stage: 'back' | 'forward', unit } while a Hanged Man use is
+//              resolving: 'back' moves backward, then 'forward' draws a card
+//              that moves `unit` (any unit when null)
+//   campsite   { unit } when `drawn` was picked from the discard pile by a
+//              campsite landing; it moves `unit` forward
+//   bonusTurn  set when a move earned another turn (rules.towerExtraTurn)
 
 import { HOME, geometry } from './board.js';
+import { nextRandom } from './random.js';
 import { getUnit, otherPlayer } from './state.js';
 
 export const MAX_UNITS_PER_CELL = 2; // default; games use state.config.maxPerCell
@@ -53,18 +63,32 @@ function canLand(state, g, occ, player, target, count) {
   return occ[player][c] + count <= state.config.maxPerCell;
 }
 
+/**
+ * How the current card moves `player`'s units: backward (Hanged Man, back
+ * stage) and/or only one unit (Hanged Man forward stage, campsite card).
+ */
+export function cardMode(state, player = state.current) {
+  if (player !== state.current) return { backward: false, only: null };
+  const { hanged, campsite } = state;
+  if (campsite) return { backward: false, only: campsite.unit };
+  if (hanged?.stage === 'back') return { backward: true, only: null };
+  if (hanged?.stage === 'forward') return { backward: false, only: hanged.unit };
+  return { backward: false, only: null };
+}
+
 /** All valid moves for `player` with a number card worth `steps`. */
-export function legalMoves(state, player, steps, occ = occupancy(state)) {
+export function legalMoves(state, player, steps, occ = occupancy(state), mode = cardMode(state, player)) {
   if (!Number.isInteger(steps) || steps < 1) {
     throw new Error('legalMoves: steps must be a positive integer');
   }
   const g = geometry(state.config);
-  const backward = Boolean(state.hangedDraw) && player === state.current;
+  const { backward, only } = mode;
   const locked = isCommanderLocked(state, player);
   const escort = state.config.rules.escort;
   const moves = [];
   for (const unit of state.units) {
     if (unit.player !== player) continue;
+    if (only !== null && unit.id !== only) continue;
     if (unit.type === 'commander' && locked) continue;
     const target = destination(state, g, unit, steps, backward);
     if (target === null) continue;
@@ -94,16 +118,47 @@ export function sendHome(units, predicate) {
 
 /**
  * Clears the drawn card and hands the turn over, unless `extraTurn` is set or
- * the card came from the Hanged Man, either of which keeps the same player.
+ * a move this turn earned one (state.bonusTurn), which keeps the same player.
  */
 export function endTurn(state, extraTurn = false) {
-  const keep = extraTurn || Boolean(state.hangedDraw);
+  const keep = extraTurn || Boolean(state.bonusTurn);
   return {
     ...state,
     drawn: null,
-    hangedDraw: false,
+    hanged: null,
+    campsite: null,
+    bonusTurn: false,
     current: keep ? state.current : otherPlayer(state.current),
   };
+}
+
+/**
+ * A random card from the current player's discard pile, picked with the
+ * game's generator; the card stays in the pile. Null when the pile is empty.
+ */
+function pickFromDiscard(state) {
+  const { discard } = state.moveDecks[state.current];
+  if (discard.length === 0) return null;
+  const r = nextRandom(state.rng);
+  return { rng: r.rng, card: discard[Math.floor(r.value * discard.length)] };
+}
+
+/**
+ * Called once the drawn card has been resolved (a move, a pass or a draft).
+ * `landing` is { unit, pos } after a card move, else null. Starts a campsite
+ * card, moves a Hanged Man use to its forward stage, or ends the turn.
+ */
+export function continueTurn(state, landing = null) {
+  const g = geometry(state.config);
+  const done = { ...state, drawn: null, campsite: null };
+  if (landing && g.isCampsite(landing.pos)) {
+    const pick = pickFromDiscard(done);
+    if (pick) return { ...done, rng: pick.rng, drawn: pick.card, campsite: { unit: landing.unit } };
+  }
+  if (done.hanged?.stage === 'back') {
+    return { ...done, hanged: { stage: 'forward', unit: done.hanged.unit } };
+  }
+  return endTurn(done);
 }
 
 /**
@@ -113,7 +168,7 @@ export function endTurn(state, extraTurn = false) {
 export function applyLegalMove(state, move, steps) {
   const g = geometry(state.config);
   const player = state.current;
-  const backward = Boolean(state.hangedDraw);
+  const { backward } = cardMode(state, player);
   const mover = getUnit(state, move.unit);
   const target = destination(state, g, mover, steps, backward);
   const targetCell = g.cellIndex(player, target);
@@ -134,16 +189,21 @@ export function applyLegalMove(state, move, steps) {
       break;
     }
   }
-  if (won) return { ...state, units, drawn: null, hangedDraw: false, winner: player };
+  if (won) {
+    return { ...state, units, drawn: null, hanged: null, campsite: null, bonusTurn: false, winner: player };
+  }
 
   const towerTurn = state.config.rules.towerExtraTurn && !backward && g.isTower(target);
-  return endTurn({ ...state, units }, towerTurn);
+  const next = { ...state, units, bonusTurn: Boolean(state.bonusTurn) || towerTurn };
+  if (backward) next.hanged = { stage: 'back', unit: move.unit };
+  return continueTurn(next, { unit: move.unit, pos: target });
 }
 
 /**
  * Applies a move that must be one of legalMoves(state, state.current, steps).
- * Returns the new state; the turn passes to the other player unless the game
- * is won or an extra turn applies.
+ * Returns the new state: the turn continues (campsite card, Hanged Man
+ * forward stage) or passes to the other player, unless the game is won or an
+ * extra turn applies.
  */
 export function applyMove(state, move, steps) {
   if (state.winner !== null) throw new Error('applyMove: the game is over');
@@ -164,7 +224,7 @@ export function playNumberCard(state, steps, move = null) {
   const legal = legalMoves(state, state.current, steps);
   if (legal.length === 0) {
     if (move !== null) throw new Error('playNumberCard: no legal move exists');
-    return endTurn(state);
+    return continueTurn(state);
   }
   if (move === null) throw new Error('playNumberCard: a legal move must be made');
   return applyMove(state, move, steps);

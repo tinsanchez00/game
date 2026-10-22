@@ -126,19 +126,19 @@ test('captures only affect the opponent', () => {
 // --- towers ---
 
 test('units on a tower cannot be captured: the opponent cannot land there', () => {
-  const g = gameWith({ 'p0-s1': 5, 'p1-s1': 8 });
+  const g = gameWith({ 'p0-s1': 4, 'p1-s1': 7 });
   assert.ok(!has(legalMoves(g, 0, 3), 'p0-s1'));
 });
 
 test('your own units can share a tower', () => {
-  const g = gameWith({ 'p0-s1': 5, 'p0-s2': 8 });
+  const g = gameWith({ 'p0-s1': 4, 'p0-s2': 7 });
   assert.ok(has(legalMoves(g, 0, 3), 'p0-s1'));
 });
 
 test('towers give no extra turn', () => {
-  const g = gameWith({ 'p0-s1': 5 });
+  const g = gameWith({ 'p0-s1': 4 });
   const after = applyMove(g, { unit: 'p0-s1' }, 3);
-  assert.equal(pos(after, 'p0-s1'), 8);
+  assert.equal(pos(after, 'p0-s1'), 7);
   assert.equal(after.current, 1);
 });
 

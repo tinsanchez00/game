@@ -31,6 +31,7 @@ function buildGeometry(board) {
   const middleFirst = startLane + 1;
   const middleLast = startLane + middleLane;
   const towerSet = new Set(board.towers);
+  const campsiteSet = new Set(board.campsites);
 
   // Physical cells: player 0 private, player 1 private, then shared.
   const privateCount = startLane + endLane;
@@ -38,8 +39,10 @@ function buildGeometry(board) {
   const cellIndexTable = [[], []];
   const cellIdTable = [[], []];
   const towerTable = [];
+  const campsiteTable = [];
   for (let pos = 0; pos <= ascended; pos += 1) {
     towerTable[pos] = pos >= 1 && pos <= pathLength && towerSet.has(pos);
+    campsiteTable[pos] = pos >= 1 && pos <= pathLength && campsiteSet.has(pos);
     for (const player of [0, 1]) {
       let index = -1;
       let id = null;
@@ -66,9 +69,11 @@ function buildGeometry(board) {
     middleLast,
     cellCount,
     towers: Object.freeze([...board.towers]),
+    campsites: Object.freeze([...board.campsites]),
     isOnBoard: (pos) => pos >= 1 && pos <= pathLength,
     isShared: (pos) => pos >= middleFirst && pos <= middleLast,
     isTower: (pos) => towerTable[pos] === true,
+    isCampsite: (pos) => campsiteTable[pos] === true,
     /** 1-based index along the middle lane, or null outside it. */
     middleIndex: (pos) => (pos >= middleFirst && pos <= middleLast ? pos - startLane : null),
     /** Path position of a middle-lane index (same for both players). */
@@ -91,6 +96,8 @@ export const TOWER_POSITIONS = D.towers;
 export const isOnBoard = D.isOnBoard;
 export const isShared = D.isShared;
 export const isTower = D.isTower;
+export const CAMPSITE_POSITIONS = D.campsites;
+export const isCampsite = D.isCampsite;
 export const middleIndex = D.middleIndex;
 export const posFromMiddleIndex = D.posFromMiddleIndex;
 export const cellId = D.cellId;

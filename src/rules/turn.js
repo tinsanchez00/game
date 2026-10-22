@@ -8,12 +8,19 @@
 //                the held power instead of the card (config.powerTiming
 //                'afterDraw') or instead of drawing ('beforeDraw')
 //
-// state.hangedDraw marks a turn whose card moves backward (the Hanged Man);
-// after it, the same player takes another turn.
+// A turn can hold several cards. After a card is resolved the same player
+// may have to resolve another one (see continueTurn in moves.js):
+//   - a campsite landing sets `drawn` to a card from the discard pile
+//     (state.campsite), resolved the same way;
+//   - the Hanged Man resolves its first card backward (hanged.stage 'back'),
+//     then waits for drawCard: that card moves the same unit forward
+//     (hanged.stage 'forward').
+// The turn is over when state.current changes, or for an extra turn when
+// drawn, hanged and campsite are all null again.
 
 import { JOKER, POWERS, isNumberCard } from './cards.js';
 import { POWER_TIMINGS } from './config.js';
-import { endTurn, legalMoves, playNumberCard } from './moves.js';
+import { continueTurn, endTurn, legalMoves, playNumberCard } from './moves.js';
 import { applyPower, powerChoices } from './powers.js';
 import { shuffle } from './random.js';
 
@@ -93,7 +100,7 @@ export function playDraft(state, keepIndex) {
     ...unpicked,
   ];
 
-  return endTurn({ ...state, held, powerDeck });
+  return continueTurn({ ...state, held, powerDeck });
 }
 
 /** True when the drawn joker can't draft (powers off, or an empty power deck). */
@@ -107,17 +114,18 @@ export function passJoker(state) {
   if (!mustPassJoker(state)) {
     throw new Error('passJoker: this joker can draft');
   }
-  return endTurn(state);
+  return continueTurn(state);
 }
 
 // --- using a held power ---------------------------------------------------------
 //
-// A power drafted this turn is never usable this turn: drafting ends the turn.
+// A power drafted this turn is never usable this turn: powers are only used
+// on a turn's own card (not during a Hanged Man use or a campsite card).
 
 /** Can the current player use their held power right now? */
 export function canUsePower(state) {
   if (state.winner !== null || !state.config.powers) return false;
-  if (!state.held[state.current] || state.hangedDraw) return false;
+  if (!state.held[state.current] || state.hanged || state.campsite) return false;
   return state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW
     ? state.drawn === null
     : state.drawn !== null;
@@ -136,8 +144,9 @@ export function powerUseChoices(state) {
 /**
  * Uses the held power instead of resolving the drawn card (after-draw timing;
  * the card stays spent) or instead of drawing (before-draw timing).
- * The Hanged Man is free: the turn's card is then resolved moving backward,
- * followed by another turn.
+ * The Hanged Man is free: the turn's card is then resolved moving backward
+ * (drawn first with the before-draw timing), and a second card moves the
+ * same unit forward.
  */
 export function usePower(state, args = {}) {
   if (!canUsePower(state)) throw new Error('usePower: no power can be used now');
@@ -149,7 +158,7 @@ export function usePower(state, args = {}) {
   const used = { ...after, held, powerDeck: [...after.powerDeck, power] };
 
   if (power === POWERS.HANGED_MAN) {
-    const backward = { ...used, hangedDraw: true };
+    const backward = { ...used, hanged: { stage: 'back', unit: null } };
     return state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? drawCard(backward) : backward;
   }
   return endTurn(used);

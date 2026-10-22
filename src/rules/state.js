@@ -10,9 +10,13 @@
 //   moveDecks,           per player: { draw: [...], discard: [...] }, top first
 //   powerDeck,           top first
 //   held,                per player: power id or null
-//   drawn,               the current player's drawn card, or null
-//   hangedDraw,          true while `drawn` came from playing the Hanged Man
+//   drawn,               the card being resolved, or null
+//   hanged,              null, or { stage, unit } while a Hanged Man use resolves
+//   campsite,            null, or { unit } when `drawn` came from a campsite
+//   bonusTurn,           true when a move this turn earned another turn
 // }
+//
+// See moves.js for how `hanged`, `campsite` and `bonusTurn` drive a turn.
 
 import { HOME } from './board.js';
 import { DEFAULT_CONFIG, makeConfig } from './config.js';
@@ -75,7 +79,9 @@ export function createGame({ seed = randomSeed(), firstPlayer, config = {} } = {
     powerDeck: powers.items,
     held: [null, null],
     drawn: null,
-    hangedDraw: false,
+    hanged: null,
+    campsite: null,
+    bonusTurn: false,
   };
 }
 

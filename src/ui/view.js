@@ -3,7 +3,7 @@
 
 import * as R from '../rules/index.js';
 import { interactions, unitKey } from './controller.js';
-import { lockIcon, towerGlyph, unitIcon } from './icons.js';
+import { campsiteMark, lockIcon, towerGlyph, unitIcon } from './icons.js';
 import { boardSlots } from './layout.js';
 import { OPTION_LABELS, POWER_INFO, TEAM_NAMES, TEXT } from './labels.js';
 
@@ -39,14 +39,15 @@ function describeCell(slot, units) {
   const what = units.length
     ? units.map((u) => `${team(u.player)} ${u.type}`).join(', ')
     : 'empty';
-  return `${where}${slot.tower ? ', tower' : ''}: ${what}`;
+  return `${where}${slot.tower ? ', tower' : ''}${slot.campsite ? ', campsite' : ''}: ${what}`;
 }
 
 function cell(slot, g, ix, victims, victimKeys) {
   if (slot.gap) return '<div class="slot gap"></div>';
   const units = g.units.filter((u) => unitKey(g, u) === slot.key);
-  const cls = ['slot', 'cell', ...(slot.tower ? ['tower'] : []), ...stateClasses(slot.key, ix, victimKeys)];
-  const inner = (slot.tower ? towerGlyph() : '') + unitsMarkup(units, victims);
+  const cls = ['slot', 'cell', ...(slot.tower ? ['tower'] : []), ...(slot.campsite ? ['campsite'] : []),
+    ...stateClasses(slot.key, ix, victimKeys)];
+  const inner = (slot.tower ? towerGlyph() : '') + (slot.campsite ? campsiteMark() : '') + unitsMarkup(units, victims);
   const label = esc(describeCell(slot, units));
   if (interactive(cls)) {
     return `<button type="button" class="${cls.join(' ')}" data-action="tap" data-key="${slot.key}" aria-label="${label}">${inner}</button>`;
@@ -151,7 +152,7 @@ function playerPanel(m, ix, victims, victimKeys) {
     <div class="home-row">${homeTray}</div>
     <div class="cards big">
       <div class="card-slot">${deck}<span class="lbl">${esc(TEXT.left(c.deck))}</span></div>
-      <div class="card-slot">${drawnCard(g)}<span class="lbl">${esc(TEXT.drawn)}</span></div>
+      <div class="card-slot">${drawnCard(g)}<span class="lbl">${esc(g.campsite ? TEXT.campCard : TEXT.drawn)}</span></div>
       <div class="card-slot">${power}<span class="lbl">${esc(TEXT.power)}</span></div>
     </div>
     ${actions(m, ix)}
@@ -178,6 +179,7 @@ function eventsLine(m) {
     if (e.type === 'lost') return TEXT.event.lost(t, e.count);
     if (e.type === 'ascended') return TEXT.event.ascended(t, e.count);
     if (e.type === 'turnLost') return TEXT.event.turnLost(t);
+    if (e.type === 'noMove') return TEXT.event.noMove(t);
     if (e.type === 'drafted') return TEXT.event.drafted(t, powerName(e.power));
     if (e.type === 'played') return TEXT.event.played(t, powerName(e.power));
     return '';
@@ -185,9 +187,16 @@ function eventsLine(m) {
   return lines.length ? `<p class="events">${esc(lines.join(' · '))}</p>` : '';
 }
 
+/** Which part of a turn the drawn card belongs to (see labels.js). */
+function stepOf(g) {
+  if (g.campsite) return 'campsite';
+  return g.hanged?.stage ?? null;
+}
+
 function actions(m, ix) {
   const g = m.game;
   const S = TEXT.status;
+  const step = stepOf(g);
   let status = '';
   let controls = '';
 
@@ -197,21 +206,21 @@ function actions(m, ix) {
       controls = `<div class="buttons">${btn('handoff', S.startTurn(team(g.current)), { primary: true })}</div>`;
       break;
     case 'draw':
-      status = S.draw(team(g.current));
+      status = step === 'forward' ? S.drawForward : S.draw(team(g.current));
       break;
     case 'move':
       status = ix.selected && !ix.chosen ? S.chooseUnit
         : ix.chosen ? S.pickMove
-          : S.move(g.drawn, g.hangedDraw);
+          : S.move(g.drawn, step);
       controls = optionChips(ix)
         + (ix.canConfirm ? `<div class="buttons">${btn('confirm', TEXT.move, { primary: true })}${btn('cancel', TEXT.cancel)}</div>` : '');
       break;
     case 'stuck':
-      status = S.stuck(g.drawn, g.hangedDraw);
+      status = S.stuck(g.drawn, step);
       controls = `<div class="buttons">${btn('continue', TEXT.continue, { primary: true })}</div>`;
       break;
     case 'jokerPass':
-      status = S.jokerPass;
+      status = S.jokerPass(step);
       controls = `<div class="buttons">${btn('continue', TEXT.continue, { primary: true })}</div>`;
       break;
     case 'joker':
@@ -219,7 +228,7 @@ function actions(m, ix) {
       controls = `<div class="buttons">${btn('joker-draft', TEXT.draft, { primary: true })}${btn('use-power', TEXT.usePowerInstead(powerName(ix.power)))}</div>`;
       break;
     case 'draft': {
-      status = S.draft(g.hangedDraw);
+      status = S.draft(step);
       const cards = R.draftOptions(g).map((id, i) =>
         `<button type="button" class="card face power choice" data-action="keep" data-index="${i}" aria-label="Keep ${esc(powerName(id))}">${powerCard(id)}</button>`);
       controls = `<div class="draft">${cards.join('')}</div>`;

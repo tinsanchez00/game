@@ -3,7 +3,8 @@
 //
 // makeConfig(overrides) deep-merges `overrides` onto DEFAULT_CONFIG, checks
 // the result and returns a frozen object. Every field is optional in the
-// overrides; `board.towers` and the decks are replaced, not merged.
+// overrides; `board.towers`, `board.campsites` and the decks are replaced, not
+// merged.
 
 export const JOKER = 'joker';
 
@@ -27,10 +28,11 @@ export const DEFAULT_CONFIG = deepFreeze({
   commanders: 1,
   maxPerCell: 2,
   board: {
-    startLane: 4, // private cells before the shared lane
-    middleLane: 8, // shared cells
+    startLane: 3, // private cells before the shared lane
+    middleLane: 9, // shared cells
     endLane: 2, // private cells after the shared lane
-    towers: [4, 8, 14], // path positions (1 = first cell of the path)
+    towers: [7, 14], // path positions (1 = first cell of the path)
+    campsites: [5], // path positions; landing with a card move draws from the discard pile
   },
   rules: {
     exactAscend: true, // false: any card that reaches past the last cell ascends
@@ -103,6 +105,12 @@ export function validateConfig(c) {
   for (const t of b.towers) {
     check(isInt(t) && t >= 1 && t <= length, `tower ${t} is outside the path (1-${length})`);
   }
+  check(Array.isArray(b.campsites), 'board.campsites must be a list');
+  check(new Set(b.campsites).size === b.campsites.length, 'board.campsites has duplicates');
+  for (const t of b.campsites) {
+    check(isInt(t) && t >= 1 && t <= length, `campsite ${t} is outside the path (1-${length})`);
+    check(!b.towers.includes(t), `cell ${t} can't be both a tower and a campsite`);
+  }
 
   for (const [k, v] of Object.entries(c.rules)) {
     check(typeof v === 'boolean', `rules.${k} must be true or false`);
@@ -118,5 +126,6 @@ export function makeConfig(overrides = {}) {
   }
   const merged = merge(structuredClone(DEFAULT_CONFIG), structuredClone(overrides));
   merged.board.towers = [...merged.board.towers].sort((a, b) => a - b);
+  merged.board.campsites = [...merged.board.campsites].sort((a, b) => a - b);
   return deepFreeze(validateConfig(merged));
 }

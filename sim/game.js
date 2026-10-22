@@ -8,6 +8,7 @@ import {
   HOME, POWER_IDS, canUsePower, createGame, currentMoves, drawCard, geometry,
   isNumberCard, mustPassJoker, passJoker, playDraft, playDrawnNumber, teamSize, usePower,
 } from '../src/rules/index.js';
+import { assertSimSupported } from './fast.js';
 
 function progress(state, p, A) {
   let s = 0;
@@ -44,6 +45,7 @@ function changed(before, after) {
  */
 export function playGame({ config, seed, bots, maxTurns = 5000 }) {
   let s = createGame({ seed, config });
+  assertSimSupported(s.config);
   const A = geometry(s.config).ascended;
   const size = teamSize(s.config);
   const first = s.current;
@@ -95,7 +97,7 @@ export function playGame({ config, seed, bots, maxTurns = 5000 }) {
 
   while (s.winner === null && turns < maxTurns) {
     const p = s.current;
-    const startOfTurn = s.drawn === null && !s.hangedDraw;
+    const startOfTurn = s.drawn === null && !s.hanged && !s.campsite;
     if (startOfTurn) {
       turns += 1;
       turnsBy[p] += 1;
@@ -136,25 +138,25 @@ export function playGame({ config, seed, bots, maxTurns = 5000 }) {
       s = playDrawnNumber(s, a.move);
       recordMove(p, before, s);
     } else if (a.kind === 'pass') {
-      if (!before.hangedDraw) wasted[p] += 1;
+      if (!before.hanged && !before.campsite) wasted[p] += 1;
       s = playDrawnNumber(s, null);
     } else if (a.kind === 'draft') {
       const kept = s.powerDeck[a.index];
       powers[kept].drafted += 1;
       s = playDraft(s, a.index);
     } else if (a.kind === 'passJoker') {
-      if (!before.hangedDraw) wasted[p] += 1;
+      if (!before.hanged && !before.campsite) wasted[p] += 1;
       s = passJoker(s);
     } else {
       throw new Error(`playGame: unknown action ${a.kind}`);
     }
 
     // A Hanged Man use is measured once its card has been resolved.
-    if (hangedStart && !s.hangedDraw) {
+    if (hangedStart && !s.hanged) {
       recordPowerEffect(p, 'hanged-man', hangedStart, s);
       hangedStart = null;
     }
-    if (s.winner === null && s.current === p && s.drawn === null && !s.hangedDraw) extraTurns[p] += 1;
+    if (s.winner === null && s.current === p && s.drawn === null && !s.hanged && !s.campsite) extraTurns[p] += 1;
     if (s.drawn === null) diffs.push(progress(s, 0, A) - progress(s, 1, A));
   }
 

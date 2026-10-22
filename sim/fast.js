@@ -3,13 +3,25 @@
 // Real games are always played through src/rules; this module only lets a
 // bot try moves and undo them quickly. tests/sim.test.js checks that its
 // move generation and move results match the engine on random positions.
-// Supports number-card moves (forward, or backward for the Hanged Man) and,
-// in fastpowers.js, the power effects.
+// Supports number-card moves (forward, or backward) and, in fastpowers.js,
+// the power effects. Not modelled yet: campsites and the Hanged Man's
+// back-then-forward turn; settings that use them are rejected.
 
 import { HOME, JOKER, POWER_IDS, geometry, otherPlayer } from '../src/rules/index.js';
 
+/** Throws for settings the simulator can't play faithfully yet. */
+export function assertSimSupported(config) {
+  if (config.board.campsites.length > 0) {
+    throw new Error('sim: campsites are not modelled yet (use board.campsites: [])');
+  }
+  if (config.powers && config.powerDeck.includes('hanged-man')) {
+    throw new Error('sim: the Hanged Man is not modelled yet (leave it out of powerDeck)');
+  }
+}
+
 export function buildFast(state) {
   const config = state.config;
+  assertSimSupported(config);
   const g = geometry(config);
   const n = state.units.length;
   const A = g.ascended;

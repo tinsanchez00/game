@@ -17,6 +17,11 @@ export function towerGlyph() {
   return `<svg class="tower-glyph" viewBox="0 0 24 24" fill="none" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="${TOWER}"></path></svg>`;
 }
 
+/** Campsite mark. PLACEHOLDER look until a design is picked. */
+export function campsiteMark() {
+  return '<span class="camp-mark" aria-hidden="true">camp</span>';
+}
+
 export function lockIcon() {
   return '<svg class="lock" viewBox="0 0 10 10" fill="none" stroke-width="1.3" aria-hidden="true"><rect x="2" y="4.5" width="6" height="4.5" rx="1"></rect><path d="M3.5 4.5V3a1.5 1.5 0 0 1 3 0v1.5"></path></svg>';
 }

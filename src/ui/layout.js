@@ -36,7 +36,7 @@ export function gridPosition(player, pos, viewer, config = DEFAULT_CONFIG) {
 
 /**
  * Every grid slot in row-major order:
- * { row, col, gap, key, tower, player, pos } where key is the rules cellId,
+ * { row, col, gap, key, tower, campsite, player, pos } where key is the rules cellId,
  * player/pos describe the cell from its owner's path (shared cells: viewer).
  */
 export function boardSlots(viewer, config = DEFAULT_CONFIG) {
@@ -56,10 +56,10 @@ export function boardSlots(viewer, config = DEFAULT_CONFIG) {
         pos = privatePosition(g, cols, col);
       }
       if (pos === null) {
-        slots.push({ row, col, gap: true, key: null, tower: false, player: null, pos: null });
+        slots.push({ row, col, gap: true, key: null, tower: false, campsite: false, player: null, pos: null });
       } else {
         slots.push({
-          row, col, gap: false, key: g.cellId(player, pos), tower: g.isTower(pos), player, pos,
+          row, col, gap: false, key: g.cellId(player, pos), tower: g.isTower(pos), campsite: g.isCampsite(pos), player, pos,
         });
       }
     }
