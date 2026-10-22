@@ -227,9 +227,9 @@ test('Lovers with no valid pair can still be used, to no effect', () => {
   assert.equal(after.held[0], null);
 });
 
-test('Lovers: a locked commander cannot be moved', () => {
+test('Lovers: a commander in the middle lane can be moved while soldiers are home', () => {
   const g = playing(POWERS.LOVERS, { 'p0-c1': 5, 'p0-s1': 11 }, { config: LOCK }); // soldiers still home
-  assert.ok(!powerUseChoices(g).some((c) => c.unit === 'p0-c1'));
+  assert.ok(powerUseChoices(g).some((c) => c.unit === 'p0-c1'));
 });
 
 // --- The Devil ---

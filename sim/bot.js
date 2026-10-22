@@ -53,7 +53,7 @@ function expectedLoss(fs, att, vic) {
     if (fs.owner[j] === vic) {
       const c = fs.cellIdx[vic][fs.pos[j]];
       if (c >= 0) cellGain[c] += fs.pos[j];
-    } else if (!(fs.cmd[j] && locked) && fs.pos[j] !== fs.A) {
+    } else if (!(fs.cmd[j] && locked && fs.pos[j] === HOME) && fs.pos[j] !== fs.A) {
       movers[m] = j;
       m += 1;
     }

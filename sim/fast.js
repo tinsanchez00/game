@@ -128,7 +128,7 @@ export function genMoves(fs, p, d, back = false, only = -1) {
   for (let i = 0; i < fs.n; i += 1) {
     if (fs.owner[i] !== p) continue;
     if (only >= 0 && i !== only) continue;
-    if (fs.cmd[i] && locked) continue;
+    if (fs.cmd[i] && locked && fs.pos[i] === HOME) continue;
     const t = dest(fs, i, d, back);
     if (t < 0) continue;
     const from = fs.pos[i];

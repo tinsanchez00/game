@@ -2,7 +2,7 @@
 // tests/sim.test.js checks them against src/rules/powers.js.
 
 import { CARD_IDS, HOME, POWER_IDS } from '../src/rules/index.js';
-import { isLocked, lift, place } from './fast.js';
+import { lift, place } from './fast.js';
 
 export const HM = POWER_IDS.indexOf('hanged-man');
 export const LOVERS = POWER_IDS.indexOf('lovers');
@@ -32,10 +32,8 @@ export function powerTargets(fs, p, k) {
   const out = [];
   const seen = new Set();
   if (k === LOVERS && fs.maxPerCell >= 2) {
-    const locked = isLocked(fs, p);
     for (let u = 0; u < fs.n; u += 1) {
       if (fs.owner[u] !== p || !shared(fs, fs.pos[u])) continue;
-      if (fs.cmd[u] && locked) continue;
       for (let t = 0; t < fs.n; t += 1) {
         if (fs.owner[t] !== p || !shared(fs, fs.pos[t]) || fs.pos[t] === fs.pos[u]) continue;
         if (unitsAt(fs, fs.pos[t]) !== 1) continue;

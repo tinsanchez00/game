@@ -3,7 +3,7 @@
 
 import { HOME, geometry } from './board.js';
 import { POWERS } from './cards.js';
-import { isCommanderLocked, sendHome } from './moves.js';
+import { sendHome } from './moves.js';
 import { getUnit } from './state.js';
 
 function middleUnits(state, player = null) {
@@ -19,10 +19,8 @@ function loversChoices(state, player) {
   if (state.config.maxPerCell < 2) return [];
   const mine = middleUnits(state, player);
   const all = middleUnits(state);
-  const locked = isCommanderLocked(state, player);
   const choices = [];
   for (const unit of mine) {
-    if (unit.type === 'commander' && locked) continue;
     for (const partner of mine) {
       if (partner.pos === unit.pos) continue;
       if (all.filter((u) => u.pos === partner.pos).length !== 1) continue;

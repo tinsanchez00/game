@@ -35,6 +35,10 @@ export function occupancy(state) {
   return occ;
 }
 
+/**
+ * True while a soldier of `player` is in the home field. The lock only keeps
+ * a commander from leaving the home field.
+ */
 export function isCommanderLocked(state, player) {
   if (!state.config.rules.commanderLock) return false;
   return state.units.some(
@@ -89,7 +93,7 @@ export function legalMoves(state, player, steps, occ = occupancy(state), mode = 
   for (const unit of state.units) {
     if (unit.player !== player) continue;
     if (only !== null && unit.id !== only) continue;
-    if (unit.type === 'commander' && locked) continue;
+    if (unit.type === 'commander' && locked && unit.pos === HOME) continue;
     const target = destination(state, g, unit, steps, backward);
     if (target === null) continue;
 

@@ -31,10 +31,32 @@ test('private lanes never collide', () => {
 
 // --- commander lock ---
 
-test('commander is locked while any soldier is in the home field', () => {
+test('commander can not leave home while any soldier is in the home field', () => {
   const g = gameWith({ ...soldiersOut(0, [1, 2, 3, 5]) }, { config: LOCK }); // s5 still home
   assert.ok(isCommanderLocked(g, 0));
   assert.ok(!has(legalMoves(g, 0, 2), 'p0-c1'));
+});
+
+test('a commander already on the board moves freely while soldiers are at home', () => {
+  const g = gameWith({ ...soldiersOut(0, [1, 2, 3, 5]), 'p0-c1': 4 }, { config: LOCK }); // s5 home
+  assert.ok(isCommanderLocked(g, 0));
+  assert.ok(has(legalMoves(g, 0, 2), 'p0-c1'));
+});
+
+test('a soldier sent home does not stop a commander on the board', () => {
+  const g = gameWith({ 'p0-s1': 3, ...soldiersOut(1, [6, 1, 2, 3, 5]), 'p1-c1': 8 }, { config: LOCK });
+  const after = applyMove(g, { unit: 'p0-s1' }, 3);
+  assert.ok(isCommanderLocked(after, 1));
+  assert.ok(has(legalMoves(after, 1, 2), 'p1-c1'));
+});
+
+test('a commander sent home is locked at home again while soldiers are home', () => {
+  const g = gameWith({ 'p0-s1': 3, 'p1-c1': 6, ...soldiersOut(1, [4, 1, 2, 3, 5]) }, { config: LOCK });
+  const after = applyMove(g, { unit: 'p0-s1' }, 3); // captures the commander on p0 cell 6
+  assert.equal(pos(after, 'p1-c1'), HOME);
+  const withSoldierHome = { ...after, units: after.units.map((u) => (u.id === 'p1-s2' ? { ...u, pos: HOME } : u)) };
+  assert.ok(!has(legalMoves(withSoldierHome, 1, 2), 'p1-c1'));
+  assert.ok(has(legalMoves(after, 1, 2), 'p1-c1')); // no soldier at home: free to enter
 });
 
 test('with the lock switched off, the commander moves even with soldiers at home', () => {
