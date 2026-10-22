@@ -3,7 +3,7 @@
 
 import * as R from '../rules/index.js';
 import { interactions, unitKey } from './controller.js';
-import { campsiteMark, lockIcon, towerGlyph, unitIcon } from './icons.js';
+import { campsiteGlyph, lockIcon, towerGlyph, unitIcon } from './icons.js';
 import { boardSlots } from './layout.js';
 import { OPTION_LABELS, POWER_INFO, TEAM_NAMES, TEXT } from './labels.js';
 
@@ -47,7 +47,7 @@ function cell(slot, g, ix, victims, victimKeys) {
   const units = g.units.filter((u) => unitKey(g, u) === slot.key);
   const cls = ['slot', 'cell', ...(slot.tower ? ['tower'] : []), ...(slot.campsite ? ['campsite'] : []),
     ...stateClasses(slot.key, ix, victimKeys)];
-  const inner = (slot.tower ? towerGlyph() : '') + (slot.campsite ? campsiteMark() : '') + unitsMarkup(units, victims);
+  const inner = (slot.tower ? towerGlyph() : '') + (slot.campsite ? campsiteGlyph() : '') + unitsMarkup(units, victims);
   const label = esc(describeCell(slot, units));
   if (interactive(cls)) {
     return `<button type="button" class="${cls.join(' ')}" data-action="tap" data-key="${slot.key}" aria-label="${label}">${inner}</button>`;
@@ -79,6 +79,19 @@ function counts(g, player) {
   };
 }
 
+/** A player's discard pile, oldest first, face up for both players. */
+function discardRow(g, player) {
+  const cards = g.moveDecks[player].discard;
+  const short = (c) => (c === R.JOKER ? TEXT.jokerShort : String(c));
+  const spoken = cards.map((c) => (c === R.JOKER ? TEXT.joker : String(c))).join(', ');
+  const minis = cards.length
+    ? cards.map((c) => `<span class="mini">${esc(short(c))}</span>`).join('')
+    : `<span class="lbl">${esc(TEXT.discardEmpty)}</span>`;
+  return `<div class="discard" role="img" aria-label="${esc(TEXT.discardLabel(team(player), spoken))}">
+    <span class="lbl">${esc(TEXT.discard)}</span>${minis}
+  </div>`;
+}
+
 function opponentPanel(g, player) {
   const c = counts(g, player);
   const power = g.held[player]
@@ -93,6 +106,7 @@ function opponentPanel(g, player) {
       <div class="card-slot"><div class="card back deck"></div><span class="lbl">${esc(TEXT.left(c.deck))}</span></div>
       <div class="card-slot">${power}<span class="lbl">${esc(TEXT.power)}</span></div>
     </div>
+    ${discardRow(g, player)}
   </section>`;
 }
 
@@ -150,6 +164,7 @@ function playerPanel(m, ix, victims, victimKeys) {
       <div class="stats">${ascTray}</div>
     </div>
     <div class="home-row">${homeTray}</div>
+    ${discardRow(g, p)}
     <div class="cards big">
       <div class="card-slot">${deck}<span class="lbl">${esc(TEXT.left(c.deck))}</span></div>
       <div class="card-slot">${drawnCard(g)}<span class="lbl">${esc(g.campsite ? TEXT.campCard : TEXT.drawn)}</span></div>

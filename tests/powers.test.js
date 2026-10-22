@@ -66,25 +66,44 @@ test('Hanged Man: going back past the first cell sends the unit home; the forwar
 });
 
 test('Hanged Man: backward moves respect towers', () => {
-  const g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10, 'p1-s1': 7 }));
+  const g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10, 'p0-s2': 11, 'p1-s1': 7 }));
   assert.ok(!currentMoves(g).some((m) => m.unit === 'p0-s1'));
+  assert.ok(currentMoves(g).some((m) => m.unit === 'p0-s2'));
 });
 
 test('Hanged Man: you must move backward when you can', () => {
   assert.throws(() => playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11 })), null));
 });
 
-test('Hanged Man: with no backward move, the forward card is a normal move', () => {
-  let g = usePower(playing(POWERS.HANGED_MAN, {})); // every unit at home
+test('Hanged Man (after draw): it cannot be used on a number card with no backward move', () => {
+  const g = playing(POWERS.HANGED_MAN, {}); // every unit at home, drew a 3
+  assert.ok(!canUsePower(g));
+  assert.deepEqual(powerUseChoices(g), []);
+  assert.throws(() => usePower(g));
+  const blocked = playing(POWERS.HANGED_MAN, { 'p0-s1': 10, 'p1-s1': 7 }); // 10 - 3 is the opponent's tower
+  assert.ok(!canUsePower(blocked));
+  assert.ok(canUsePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 })));
+});
+
+test('Hanged Man (after draw): it can be used on a drawn joker wherever your units are', () => {
+  assert.ok(canUsePower(playing(POWERS.HANGED_MAN, {}, { deck: [JOKER, 2] })));
+});
+
+test('Hanged Man (before draw): a card with no backward move spends it and ends the turn', () => {
+  const base = createGame({ seed: 1, firstPlayer: 0, config: { powerTiming: 'beforeDraw' } });
+  let g = {
+    ...base,
+    moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
+    held: [POWERS.HANGED_MAN, null],
+  };
+  assert.ok(canUsePower(g));
+  g = usePower(g); // every unit at home: no backward move
   assert.equal(currentMoves(g).length, 0);
   g = playDrawnNumber(g, null);
-  assert.equal(g.current, 0);
-  assert.deepEqual(g.hanged, { stage: 'forward', unit: null });
-  g = drawCard(g); // draws 1
-  assert.equal(currentMoves(g).length, 5, 'any soldier can enter');
-  g = playDrawnNumber(g, { unit: 'p0-s3' });
-  assert.equal(pos(g, 'p0-s3'), 1);
   assert.equal(g.current, 1);
+  assert.equal(g.held[0], null);
+  assert.equal(g.hanged, null);
+  assert.deepEqual(g.moveDecks[0].draw, [1], 'no forward card is drawn');
 });
 
 test('Hanged Man on a joker: draft, then the forward card is a normal move, then the turn ends', () => {

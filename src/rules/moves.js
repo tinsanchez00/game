@@ -224,7 +224,8 @@ export function playNumberCard(state, steps, move = null) {
   const legal = legalMoves(state, state.current, steps);
   if (legal.length === 0) {
     if (move !== null) throw new Error('playNumberCard: no legal move exists');
-    return continueTurn(state);
+    // A Hanged Man card with no backward move ends the turn (no forward card).
+    return cardMode(state).backward ? endTurn(state) : continueTurn(state);
   }
   if (move === null) throw new Error('playNumberCard: a legal move must be made');
   return applyMove(state, move, steps);

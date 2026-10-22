@@ -17,9 +17,12 @@ export function towerGlyph() {
   return `<svg class="tower-glyph" viewBox="0 0 24 24" fill="none" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="${TOWER}"></path></svg>`;
 }
 
-/** Campsite mark. PLACEHOLDER look until a design is picked. */
-export function campsiteMark() {
-  return '<span class="camp-mark" aria-hidden="true">camp</span>';
+const STONES = [[19.5, 12], [17.3, 17.3], [12, 19.5], [6.7, 17.3], [4.5, 12], [6.7, 6.7], [12, 4.5], [17.3, 6.7]]
+  .map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.7"></circle>`).join('');
+
+/** Campsite: a ring of stones. */
+export function campsiteGlyph() {
+  return `<svg class="camp-glyph" viewBox="0 0 24 24" aria-hidden="true">${STONES}</svg>`;
 }
 
 export function lockIcon() {

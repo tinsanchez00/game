@@ -125,10 +125,15 @@ export function passJoker(state) {
 /** Can the current player use their held power right now? */
 export function canUsePower(state) {
   if (state.winner !== null || !state.config.powers) return false;
-  if (!state.held[state.current] || state.hanged || state.campsite) return false;
-  return state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW
-    ? state.drawn === null
-    : state.drawn !== null;
+  const power = state.held[state.current];
+  if (!power || state.hanged || state.campsite) return false;
+  if (state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW) return state.drawn === null;
+  if (state.drawn === null) return false;
+  // After draw, the Hanged Man needs a backward move for a drawn number card.
+  if (power === POWERS.HANGED_MAN && isNumberCard(state.drawn)) {
+    return legalMoves(state, state.current, state.drawn, undefined, { backward: true, only: null }).length > 0;
+  }
+  return true;
 }
 
 /**
@@ -145,8 +150,8 @@ export function powerUseChoices(state) {
  * Uses the held power instead of resolving the drawn card (after-draw timing;
  * the card stays spent) or instead of drawing (before-draw timing).
  * The Hanged Man is free: the turn's card is then resolved moving backward
- * (drawn first with the before-draw timing), and a second card moves the
- * same unit forward.
+ * (drawn first with the before-draw timing; if that card has no backward
+ * move the turn ends), and a second card moves the same unit forward.
  */
 export function usePower(state, args = {}) {
   if (!canUsePower(state)) throw new Error('usePower: no power can be used now');

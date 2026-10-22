@@ -264,3 +264,15 @@ test('landing on the campsite shows the card from your discard pile and moves th
   assert.equal(R.getUnit(m.game, 'p0-s1').pos, 7);
   assert.equal(interactions(m).phase, 'handoff');
 });
+
+test("both players' discard piles are shown face up, outside the board", () => {
+  let m = modelWith({ 'p0-s1': 3 }, {
+    moveDecks: [{ draw: [2], discard: [1, R.JOKER] }, { draw: [4], discard: [3] }],
+  });
+  m = update(m, { type: 'draw' });
+  const html = view(m);
+  assert.ok(html.includes('Gold&#39;s discard pile: 1, Joker, 2'));
+  assert.ok(html.includes('Obsidian&#39;s discard pile: 3'));
+  const board = html.slice(html.indexOf('class="board"'), html.indexOf('</section>', html.indexOf('class="board"')));
+  assert.ok(!board.includes('discard'), 'not on the board');
+});
