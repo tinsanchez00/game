@@ -233,7 +233,7 @@ function stepOf(g) {
 
 /**
  * The status line and controls for the current phase: { status, controls }.
- * cards3d: the draft cards are drawn in the 3D view, not as buttons.
+ * cards3d: the draft and the held power are tapped in the 3D view, not as buttons.
  */
 function turnControls(m, ix, { cards3d = false } = {}) {
   const g = m.game;
@@ -267,7 +267,7 @@ function turnControls(m, ix, { cards3d = false } = {}) {
       break;
     case 'joker':
       status = S.joker;
-      controls = `<div class="buttons">${btn('joker-draft', TEXT.draft, { primary: true })}${btn('use-power', TEXT.usePowerInstead(powerName(ix.power)))}</div>`;
+      controls = `<div class="buttons">${btn('joker-draft', TEXT.draft, { primary: true })}${cards3d ? '' : btn('use-power', TEXT.usePowerInstead(powerName(ix.power)))}</div>`;
       break;
     case 'draft': {
       status = S.draft(step);
@@ -296,7 +296,8 @@ function turnControls(m, ix, { cards3d = false } = {}) {
   }
 
   // The held power can stand in for the card (after draw) or the draw itself.
-  if (ix.canUsePower && ['draw', 'move', 'stuck', 'jokerPass'].includes(ix.phase)) {
+  // In 3D the glowing power card itself is tapped instead.
+  if (!cards3d && ix.canUsePower && ['draw', 'move', 'stuck', 'jokerPass'].includes(ix.phase)) {
     const label = ix.phase === 'draw' ? TEXT.usePower(powerName(ix.power)) : TEXT.usePowerInstead(powerName(ix.power));
     controls += `<div class="buttons">${btn('use-power', label)}</div>`;
   }

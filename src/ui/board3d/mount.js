@@ -1,7 +1,7 @@
 // Puts the 3D table on the page: one WebGL canvas that survives the app's
 // re-renders (it is moved into each new host element), a render loop that
 // only runs while something moves, and taps turned into the same actions the
-// flat board sends ({ type: 'tap', key }, 'draw', { type: 'keep', index }).
+// flat board sends ({ type: 'tap', key }, 'draw', 'use-power', { type: 'keep', index }).
 
 import * as THREE from '../../../vendor/three/three.module.js';
 import { RoomEnvironment } from '../../../vendor/three/RoomEnvironment.js';
@@ -23,6 +23,7 @@ export function webglAvailable() {
 export function allowed(action, model, ix) {
   if (!action) return false;
   if (action.type === 'draw') return ix.phase === 'draw' && action.player === model.game.current;
+  if (action.type === 'use-power') return ix.canUsePower && action.player === model.game.current;
   if (action.type === 'keep') return ix.phase === 'draft';
   if (action.type === 'tap') {
     const live = new Set([...ix.tappable, ...(ix.targets ?? []), ix.dest].filter(Boolean));
@@ -126,7 +127,7 @@ export function createBoardView({ onAction }) {
     const y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
     const action = board.pick(x, y);
     if (!allowed(action, model, ix)) return;
-    if (action.type === 'draw') onAction({ type: 'draw' });
+    if (action.type === 'draw' || action.type === 'use-power') onAction({ type: action.type });
     else onAction(action);
   });
   document.addEventListener('visibilitychange', () => {

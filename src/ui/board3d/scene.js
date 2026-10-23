@@ -447,6 +447,7 @@ function buildSide(L, player, yawers) {
   };
   const drawn = place(makeCard(CARD.w, CARD.d), L.drawn);
   const power = place(makeCard(CARD.w, CARD.d), L.power);
+  for (const m of [power.front, power.back]) m.userData = { action: 'power', player };
   const drawnSlot = makeSlot(CARD.w, CARD.d);
   drawnSlot.position.set(L.drawn.x, TABLE_Y + 0.003, L.drawn.z);
   const powerSlot = makeSlot(CARD.w, CARD.d);
@@ -489,7 +490,7 @@ function buildSide(L, player, yawers) {
  *   tick(now) -> boolean,               advance animations; true while anything moves
  *   resize(width, height),
  *   pick(ndcX, ndcY) -> action | null,  what a tap at a point does: { type: 'tap', key },
- *                                       { type: 'draw', player } or { type: 'keep', index }
+ *                                       { type: 'draw' | 'use-power', player } or { type: 'keep', index }
  *   screenOf(object3d | key) -> { x, y },  normalized device coords (tests)
  *   unitWorld(id) -> Vector3 | null,
  *   parts,                              cards and draft cards (tests)
@@ -1060,6 +1061,7 @@ export function createBoardScene(config) {
       const ud = o.userData ?? {};
       if (ud.keep !== undefined) return { type: 'keep', index: ud.keep };
       if (ud.action === 'draw') return { type: 'draw', player: ud.player };
+      if (ud.action === 'power') return { type: 'use-power', player: ud.player };
       if (ud.key) return { type: 'tap', key: ud.key };
       if (ud.unitId) {
         const p = pieces.get(ud.unitId);
@@ -1080,6 +1082,7 @@ export function createBoardScene(config) {
       ...[...surfaces.values()].map((c) => c.tile),
       ...[...pieces.values()].map((p) => p.obj),
       ...sides.flatMap((s) => [s.stack, s.top.front, s.top.back]).filter((m) => m.visible !== false),
+      ...sides.filter((s) => s.power.yaw.visible).flatMap((s) => [s.power.front, s.power.back]),
     ];
     for (const hit of raycaster.intersectObjects(targets, true)) {
       if (!hit.object.visible) continue;

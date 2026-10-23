@@ -246,3 +246,20 @@ test('what you can act on glows: your deck when drawing, then a usable power', (
   assert.equal(side.deckHalo.material.opacity, 0, 'no more glow once drawn');
   assert.ok(side.powerHalo.material.opacity > 0.4, 'now the power you can use glows');
 });
+
+test('tapping your glowing power card uses it', () => {
+  let model = initModel(gameWith({ 'p0-s1': 6 }));
+  model.game.held[0] = R.POWERS.TOWER;
+  model.game.held[1] = R.POWERS.HERMIT;
+  const board = sceneFor(model);
+  const mine = board.parts.sides[0].power.front;
+  assert.deepEqual(pickAt(board, mine), { type: 'use-power', player: 0 });
+  assert.ok(!allowed(pickAt(board, mine), model, interactions(model)), 'not before drawing ("after draw" timing)');
+  model = step(board, model, { type: 'draw' }, 0);
+  board.tick(TIMING.draw + 1);
+  const ix = interactions(model);
+  assert.ok(allowed(pickAt(board, mine), model, ix));
+  assert.ok(!allowed(pickAt(board, board.parts.sides[1].power.front), model, ix), "not the other player's");
+  const after = update(model, { type: 'use-power' });
+  assert.equal(after.game.held[0], null, 'The Tower was used');
+});

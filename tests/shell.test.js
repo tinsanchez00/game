@@ -117,3 +117,11 @@ test('3D game screen: the draft is picked on the table, not with buttons', () =>
   s = { ...s, board: 'flat', screen: 'game' };
   assert.match(viewShell(s), /data-action="keep"/, 'the flat board still offers buttons');
 });
+
+test('3D game screen: no "Use … instead" buttons; the power card is tapped instead', () => {
+  const game = R.createGame({ seed: 7 });
+  let s = updateShell(initShell(), { type: 'menu-quick' }, { newGame: () => ({ ...game, drawn: 2, held: [R.POWERS.TOWER, R.POWERS.TOWER] }) });
+  s = { ...s, play: { ...s.play, ui: { ...s.play.ui, viewer: s.play.game.current } } };
+  assert.doesNotMatch(viewShell(s), /data-action="use-power"/);
+  assert.match(viewShell({ ...s, board: 'flat' }), /data-action="use-power"/);
+});
