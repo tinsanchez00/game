@@ -413,26 +413,28 @@ export function lockGlyph() {
 export function textLabel(style = 'label', w = 512, h = 96) {
   if (!canvasAvailable()) return null;
   let text = '';
+  // Bright text with a dark outline, readable on wood, felt or cards.
   const draw = (ctx, cw, ch) => {
     ctx.clearRect(0, 0, cw, ch);
     if (!text) return;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    if (style === 'caps') {
-      ctx.fillStyle = COL.gold;
-      ctx.font = font(BODY, 40, 500);
-      if ('letterSpacing' in ctx) ctx.letterSpacing = '6px';
-      ctx.fillText(text.toUpperCase(), cw / 2, ch / 2);
-    } else {
-      ctx.fillStyle = COL.muted;
-      ctx.font = font(BODY, 46);
-      ctx.fillText(text, cw / 2, ch / 2);
-    }
+    const caps = style === 'caps';
+    ctx.font = caps ? font(BODY, 56, 500) : font(BODY, 62, 500);
+    if ('letterSpacing' in ctx) ctx.letterSpacing = caps ? '6px' : '0px';
+    const line = caps ? text.toUpperCase() : text;
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 12;
+    ctx.strokeStyle = 'rgba(12,10,8,0.85)';
+    ctx.strokeText(line, cw / 2, ch / 2 + 2);
+    ctx.fillStyle = caps ? COL.gold : COL.shellBright;
+    ctx.fillText(line, cw / 2, ch / 2 + 2);
   };
   const entry = makeEntry(w, h, draw);
   if (!entry) return null;
   return {
     tex: entry.tex,
+    aspect: w / h,
     set(next) {
       if (next === text) return;
       text = next;
@@ -445,4 +447,33 @@ export function textLabel(style = 'label', w = 512, h = 96) {
       entry.tex.dispose();
     },
   };
+}
+
+// --- glow halos ------------------------------------------------------------------------
+
+/**
+ * A soft white glow ring for a w x d target, on a plane `margin` larger on
+ * every side (tinted by the material colour).
+ */
+export function glowRing(w, d, margin) {
+  const W = w + 2 * margin;
+  const D = d + 2 * margin;
+  const cw = 256;
+  const ch = Math.max(32, Math.round((cw * D) / W));
+  const key = `glow:${w.toFixed(2)}x${d.toFixed(2)}+${margin.toFixed(2)}`;
+  return cached(key, cw, ch, (ctx) => {
+    const px = cw / W;
+    const inset = margin * px;
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.shadowColor = '#ffffff';
+    ctx.strokeStyle = '#ffffff';
+    for (const [blur, width, alpha] of [[inset * 0.9, inset * 0.18, 0.55], [inset * 0.45, inset * 0.12, 0.9]]) {
+      ctx.shadowBlur = blur;
+      ctx.lineWidth = width;
+      ctx.globalAlpha = alpha;
+      roundRect(ctx, inset, inset, cw - 2 * inset, ch - 2 * inset, Math.min(cw, ch) * 0.06);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  });
 }

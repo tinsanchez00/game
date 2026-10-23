@@ -35,6 +35,8 @@ const C = {
   teamObsidianRim: 0xd4af5a,
   ascTray: 0x1a2a57,
   room: 0x120d09, // the dark room around the table
+  glow: 0x4fe8d6, // what you can act on (placeholder colour)
+  glowSel: 0xc8fff7, // the current selection
   wood: 0x3a2416,
   boardWood: 0x5a3820,
   felt: 0x16245a,
@@ -63,6 +65,8 @@ export const CAMERA = {
 };
 
 const HOP_HEIGHT = 0.55;
+const LABEL_PX = 22; // label height on screen, in CSS px (placeholder)
+const LABEL_MAX = 0.42; // ...but never taller than this many world units at the board's distance
 const LIFT = 0.12; // selected units rise this much
 const DRAFT = { w: 1.3, h: 1.82, gap: 0.35, z: -6 }; // draft cards, in camera space
 
@@ -206,18 +210,33 @@ function makeSlot(w, d) {
   return m;
 }
 
-/** Flat text on the table that turns with the camera: { yaw, set(text) }. */
-function makeLabel(style = 'label', w = LABEL.w, h = LABEL.h) {
+/** Upright text that always faces the camera: { yaw, sprite, set(text) }. */
+function makeLabel(style = 'label') {
   const yaw = new THREE.Group();
   const t = TX.textLabel(style);
-  if (!t) return { yaw, set() {}, dispose() {} };
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(w, h).rotateX(-Math.PI / 2),
-    new THREE.MeshBasicMaterial({ map: t.tex, transparent: true, depthWrite: false, toneMapped: false }),
+  if (!t) return { yaw, sprite: null, set() {}, dispose() {} };
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: t.tex, transparent: true, depthWrite: false, fog: false, toneMapped: false,
+  }));
+  sprite.position.y = 0.05;
+  sprite.userData.aspect = t.aspect;
+  sprite.renderOrder = 5;
+  yaw.add(sprite);
+  return { yaw, sprite, set: t.set, dispose: t.dispose };
+}
+
+/** A soft additive glow around a w x d target lying on the table. */
+function makeHalo(w, d, margin = 0.3) {
+  const tex = TX.glowRing(w, d, margin);
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(w + 2 * margin, d + 2 * margin).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({
+      color: C.glow, map: tex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+      depthWrite: false, fog: false, toneMapped: false,
+    }),
   );
-  mesh.position.y = 0.004;
-  yaw.add(mesh);
-  return { yaw, set: t.set, dispose: t.dispose };
+  m.visible = Boolean(tex);
+  return m;
 }
 
 // --- board, table and trays ----------------------------------------------------------------------
@@ -242,11 +261,13 @@ function highlightLayers(w, d, y) {
   );
   fill.position.y = y + 0.004;
   const frame = new THREE.Mesh(
-    rectFrame(w, d, Math.min(w, d) * 0.085),
-    new THREE.MeshBasicMaterial({ color: C.gold, transparent: true, opacity: 0, depthWrite: false }),
+    rectFrame(w, d, Math.min(w, d) * 0.07),
+    new THREE.MeshBasicMaterial({ color: C.glow, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }),
   );
   frame.position.y = y + 0.006;
-  return { fill, frame };
+  const halo = makeHalo(w, d, 0.28);
+  halo.position.y = y + 0.008;
+  return { fill, frame, halo };
 }
 
 function buildBoard(layout, surfaces) {
@@ -309,10 +330,10 @@ function buildBoard(layout, surfaces) {
         c.add(stone);
       }
     }
-    const { fill, frame } = highlightLayers(CELL * 0.94, CELL * 0.94, TILE_TOP);
-    c.add(fill, frame);
+    const { fill, frame, halo } = highlightLayers(CELL * 0.94, CELL * 0.94, TILE_TOP);
+    c.add(fill, frame, halo);
     group.add(c);
-    surfaces.set(cell.key, { tile, tileMat, fill, frame, tower: cell.tower });
+    surfaces.set(cell.key, { tile, tileMat, fill, frame, halo, tower: cell.tower });
   }
   return group;
 }
@@ -341,8 +362,8 @@ function buildTrays(layout, surfaces, yawers) {
     tile.position.y = 0.031;
     tile.receiveShadow = true;
     tile.userData.key = t.key;
-    const { fill, frame } = highlightLayers(t.w, t.d, 0.06);
-    g.add(rim, tile, fill, frame);
+    const { fill, frame, halo } = highlightLayers(t.w, t.d, 0.08);
+    g.add(rim, tile, fill, frame, halo);
     if (home) {
       const lock = new THREE.Group();
       lock.position.set(t.w / 2 - 0.16, 0.065, -t.d / 2 + 0.16);
@@ -359,7 +380,7 @@ function buildTrays(layout, surfaces, yawers) {
       locks.set(t.key, lock);
     }
     group.add(g);
-    surfaces.set(t.key, { tile, tileMat, fill, frame, tower: false });
+    surfaces.set(t.key, { tile, tileMat, fill, frame, halo, tower: false });
   }
   return { group, locks };
 }
@@ -412,7 +433,9 @@ function buildSide(L, player, yawers) {
   top.setBack(TX.cardBack(), C.lapisCard);
   top.flip.rotation.z = Math.PI;
   const deckSlot = makeSlot(DECK.w, DECK.d);
-  deck.add(stack, top.yaw, deckSlot);
+  const deckHalo = makeHalo(DECK.w, DECK.d, 0.32);
+  deckHalo.position.y = 0.004;
+  deck.add(deckHalo, stack, top.yaw, deckSlot);
   for (const m of [stack, top.front, top.back]) m.userData = { action: 'draw', player };
   yawers.push(top.yaw);
 
@@ -428,13 +451,14 @@ function buildSide(L, player, yawers) {
   drawnSlot.position.set(L.drawn.x, TABLE_Y + 0.003, L.drawn.z);
   const powerSlot = makeSlot(CARD.w, CARD.d);
   powerSlot.position.set(L.power.x, TABLE_Y + 0.003, L.power.z);
-  group.add(deck, drawnSlot, powerSlot);
+  const powerHalo = makeHalo(CARD.w, CARD.d, 0.32);
+  powerHalo.position.set(L.power.x, TABLE_Y + 0.004, L.power.z);
+  group.add(deck, drawnSlot, powerSlot, powerHalo);
 
   const labels = {};
   for (const [name, at] of Object.entries(L.labels)) {
     const label = makeLabel(name === 'home' ? 'caps' : 'label');
     label.yaw.position.set(at.x, TABLE_Y, at.z);
-    yawers.push(label.yaw);
     group.add(label.yaw);
     labels[name] = label;
   }
@@ -450,7 +474,10 @@ function buildSide(L, player, yawers) {
     return minis[i];
   };
 
-  return { group, deck, stack, top, deckSlot, drawn, power, drawnSlot, powerSlot, labels, minis, mini, L, shownDrawn: null, drawAnim: null };
+  return {
+    group, deck, stack, top, deckSlot, deckHalo, drawn, power, drawnSlot, powerSlot, powerHalo, labels, minis, mini, L,
+    shownDrawn: null, drawAnim: null,
+  };
 }
 
 // --- the scene -------------------------------------------------------------------------------
@@ -480,8 +507,11 @@ export function createBoardScene(config) {
   scene.fog = new THREE.Fog(C.room, 20, 60);
   scene.environmentIntensity = 0.45;
   scene.add(new THREE.HemisphereLight(0xffe9cc, 0x1a120b, 0.55));
+  // The lamp hangs over the viewer's side of the table and turns with the camera,
+  // so both players get the same light.
+  const SUN = new THREE.Vector3(3, 10, 5);
   const sun = new THREE.DirectionalLight(0xffe2b8, 2.8);
-  sun.position.set(3, 10, 5);
+  sun.position.copy(SUN);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   const half = Math.max(layout.table.halfX, layout.table.halfZ) + 1;
@@ -491,6 +521,8 @@ export function createBoardScene(config) {
   scene.add(sun);
 
   const yawers = []; // objects that turn to face the viewer
+  const UP = new THREE.Vector3(0, 1, 0);
+  let viewportH = 390;
   const surfaces = new Map(); // tappable surfaces by key: cells and trays
   scene.add(buildTable(layout));
   scene.add(buildBoard(layout, surfaces));
@@ -530,8 +562,12 @@ export function createBoardScene(config) {
   const pieces = new Map(); // id -> { obj, place, anim, lift }
   let viewer = null;
   let lastGame = null;
+  let syncing = null; // the game being synced (for highlights)
+  let currentPlayer = 0;
+  const lastGameFor = () => syncing ?? lastGame;
   let pulseKeys = new Set();
   let doomed = new Set();
+  let glowUnits = new Set(); // pieces you can act on
   const glow = { deck: null, power: null }; // cards that breathe: the deck to draw from, a power ready to use
 
   // Camera state: azimuth turns around the table; view centre and zoom follow the selection.
@@ -557,6 +593,8 @@ export function createBoardScene(config) {
     camera.up.set(0, 1, 0);
     camera.lookAt(cam.target);
     camera.updateMatrixWorld();
+    sun.position.copy(SUN).applyAxisAngle(UP, cam.azimuth);
+    scene.environmentRotation.y = cam.azimuth;
   }
 
   /** Smallest distance at which the whole table is inside the view. */
@@ -588,6 +626,7 @@ export function createBoardScene(config) {
   }
 
   function resize(width, height) {
+    viewportH = Math.max(1, height);
     cam.aspect = Math.max(0.1, width / Math.max(1, height));
     camera.aspect = cam.aspect;
     camera.far = 200;
@@ -705,31 +744,43 @@ export function createBoardScene(config) {
       const can = ix.tappable.includes(key);
       const sel = key === ix.selected;
       const dest = dests.has(key);
+      c.tileMat.emissive.setHex(C.glow);
       c.tileMat.emissiveIntensity = 0;
       c.fill.material.opacity = 0;
       c.frame.material.opacity = 0;
+      c.halo.material.opacity = 0;
+      c.halo.material.color.setHex(C.glow);
+      c.frame.material.color.setHex(C.glow);
+      if (can || dest) c.frame.material.opacity = 0.9;
       if (dest) {
-        c.fill.material.color.setHex(c.tower ? C.lapisCard : C.shellBright);
-        c.fill.material.opacity = c.tower ? 0.5 : 0.55;
-        c.tileMat.emissiveIntensity = 0.18;
+        c.fill.material.color.setHex(C.glow);
+        c.fill.material.opacity = 0.28;
+        c.halo.material.opacity = 1;
+        c.tileMat.emissiveIntensity = 0.25;
       }
       if (sel) {
-        c.fill.material.color.setHex(C.shellBright);
-        c.fill.material.opacity = 0.35;
-      }
-      if (can || sel || dest) {
-        c.frame.material.color.setHex(C.gold);
+        c.fill.material.color.setHex(C.glowSel);
+        c.fill.material.opacity = 0.3;
+        c.frame.material.color.setHex(C.glowSel);
         c.frame.material.opacity = 1;
+        c.halo.material.color.setHex(C.glowSel);
+        c.halo.material.opacity = 0.8;
       }
       if (can && !sel && !dest) pulseKeys.add(key);
       if (victimKeys.has(key)) {
         c.frame.material.color.setHex(C.carnelian);
         c.frame.material.opacity = 1;
+        c.halo.material.color.setHex(C.carnelian);
+        c.halo.material.opacity = 0.9;
       }
     }
     doomed = victimIds;
+    glowUnits = new Set();
+    const live = new Set([...ix.tappable, ix.selected].filter(Boolean));
     for (const [id, p] of pieces) {
       p.lift = p.place.key === ix.selected ? LIFT : 0;
+      // Only your own pieces glow; the cells' halos already show where you can go.
+      if (live.has(p.place.key) && R.getUnit(lastGameFor(), id)?.player === currentPlayer && !doomed.has(id)) glowUnits.add(id);
       if (!p.anim || p.anim.kind === 'hop' || p.anim.kind === 'slide') setGlow(p.obj.userData.mats, C.carnelian, doomed.has(id) ? 0.5 : 0);
     }
   }
@@ -752,7 +803,14 @@ export function createBoardScene(config) {
   function syncCards(game, ix, viewerNow, animate, now) {
     glow.deck = null;
     glow.power = null;
-    for (const s of sides) for (const m of [...s.top.mats, ...s.drawn.mats, ...s.power.mats, s.stack.material]) m.emissiveIntensity = 0;
+    for (const s of sides) {
+      for (const m of [...s.top.mats, ...s.drawn.mats, ...s.power.mats, s.stack.material]) {
+        m.emissive.setHex(C.glow);
+        m.emissiveIntensity = 0;
+      }
+      s.deckHalo.material.opacity = 0;
+      s.powerHalo.material.opacity = 0;
+    }
     sides.forEach((s, p) => {
       const L = s.L;
       // Deck: a stack as tall as the cards left in it.
@@ -904,6 +962,24 @@ export function createBoardScene(config) {
     placeCamera();
   }
 
+  /** Labels keep the same size on screen on both sides of the table. */
+  function scaleLabels() {
+    const tan = Math.tan(THREE.MathUtils.degToRad(CAMERA.fov / 2));
+    const boardDist = camera.position.distanceTo(cam.target);
+    const v = new THREE.Vector3();
+    for (const s of sides) {
+      for (const label of Object.values(s.labels)) {
+        if (!label.sprite) continue;
+        label.sprite.getWorldPosition(v);
+        const d = camera.position.distanceTo(v);
+        const byPx = (LABEL_PX / viewportH) * 2 * d * tan;
+        const byWorld = LABEL_MAX * (d / boardDist);
+        const h = Math.min(byPx, byWorld);
+        label.sprite.scale.set(h * label.sprite.userData.aspect, h, 1);
+      }
+    }
+  }
+
   function stepCamera(now) {
     let moving = false;
     if (cam.spin) {
@@ -922,6 +998,7 @@ export function createBoardScene(config) {
     }
     placeCamera();
     for (const y of yawers) y.rotation.y = cam.azimuth;
+    scaleLabels();
     return moving;
   }
 
@@ -930,6 +1007,8 @@ export function createBoardScene(config) {
   function sync(model, ix, { animate = false, now = performance.now() } = {}) {
     const game = model.game;
     const anim = animate && lastGame !== null;
+    syncing = game;
+    currentPlayer = game.current;
     syncUnits(game, anim, now);
     syncHighlights(ix);
     syncLines(ix);
@@ -937,7 +1016,9 @@ export function createBoardScene(config) {
     syncDraft(game, ix, anim, now);
     syncCamera(ix, model.ui.viewer, anim, now);
     for (const y of yawers) y.rotation.y = cam.azimuth;
+    scaleLabels();
     lastGame = game;
+    syncing = null;
   }
 
   function tick(now = performance.now()) {
@@ -945,22 +1026,31 @@ export function createBoardScene(config) {
     for (const p of pieces.values()) if (stepUnit(p, now)) moving = true;
     if (stepCards(now)) moving = true;
     if (stepDraft(now)) moving = true;
-    // Things you can tap breathe (gold glow), like the flat board.
-    const pulse = 0.5 + 0.5 * Math.sin((now / 1600) * Math.PI * 2);
+    // Things you can act on breathe with a glow.
+    const pulse = 0.5 + 0.5 * Math.sin((now / 1400) * Math.PI * 2);
     for (const key of pulseKeys) {
       const c = surfaces.get(key);
-      if (c) c.tileMat.emissiveIntensity = 0.06 + 0.22 * pulse;
+      if (!c) continue;
+      c.tileMat.emissiveIntensity = 0.05 + 0.2 * pulse;
+      c.halo.material.opacity = 0.35 + 0.55 * pulse;
     }
     if (glow.deck) {
-      for (const m of glow.deck.top.mats) m.emissiveIntensity = 0.1 + 0.3 * pulse;
-      glow.deck.stack.material.emissiveIntensity = 0.1 + 0.3 * pulse;
+      glow.deck.deckHalo.material.opacity = 0.4 + 0.6 * pulse;
+      for (const m of glow.deck.top.mats) m.emissiveIntensity = 0.08 + 0.2 * pulse;
     }
-    if (glow.power) for (const m of glow.power.power.mats) m.emissiveIntensity = 0.05 + 0.2 * pulse;
+    if (glow.power) {
+      glow.power.powerHalo.material.opacity = 0.4 + 0.6 * pulse;
+      for (const m of glow.power.power.mats) m.emissiveIntensity = 0.05 + 0.15 * pulse;
+    }
+    for (const id of glowUnits) {
+      const p = pieces.get(id);
+      if (p && !p.anim) setGlow(p.obj.userData.mats, C.glow, 0.15 + 0.35 * pulse);
+    }
     for (const id of doomed) {
       const p = pieces.get(id);
       if (p && !p.anim) setGlow(p.obj.userData.mats, C.carnelian, 0.35 + 0.25 * pulse);
     }
-    return moving || pulseKeys.size > 0 || doomed.size > 0 || Boolean(glow.deck || glow.power);
+    return moving || pulseKeys.size > 0 || doomed.size > 0 || glowUnits.size > 0 || Boolean(glow.deck || glow.power);
   }
 
   const raycaster = new THREE.Raycaster();

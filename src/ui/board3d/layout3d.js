@@ -24,8 +24,8 @@ export const TRAY_TOP = TABLE_Y + 0.06; // where units stand in a tray
 export const TRAY = { slot: 0.48, row: 0.42, pad: 0.2, depth: 1.0 };
 export const CARD = { w: 0.9, d: 1.26 };
 export const DECK = { w: 0.8, d: 1.12 };
-export const MINI = { w: 0.36, d: 0.5, step: 0.17 };
-export const LABEL = { w: 1.3, h: 0.24 };
+export const MINI = { w: 0.46, d: 0.64, step: 0.2 };
+export const LABEL = { w: 1.3, h: 0.3 };
 
 const GAP = 0.3; // board edge to the trays and cards
 const CARD_GAP = 0.2;

@@ -217,3 +217,32 @@ test('a scene can be thrown away and rebuilt for another board size', () => {
   assert.equal(board.layout.cells.length, R.geometry(short.config).cellCount);
   board.dispose();
 });
+
+test("the lamp turns with the camera, so it always hangs over the viewer's side", () => {
+  let model = initModel(gameWith({ 'p0-s1': 6 }, { drawn: 2 }));
+  const board = sceneFor(model);
+  const sun = board.scene.children.find((o) => o.isDirectionalLight);
+  assert.ok(sun.position.z > 0, "over player 0's side");
+  model = step(board, model, { type: 'tap', key: G.cellId(0, 6) }, 0);
+  model = step(board, model, { type: 'confirm' }, 10);
+  model = step(board, model, { type: 'handoff' }, 20);
+  board.tick(20 + TIMING.spin + 1);
+  assert.ok(sun.position.z < 0, "over player 1's side");
+});
+
+test('what you can act on glows: your deck when drawing, then a usable power', () => {
+  let model = initModel(gameWith({ 'p0-s1': 6 }));
+  model.game.held[0] = R.POWERS.TOWER;
+  const board = sceneFor(model);
+  board.tick(350); // the pulse is near its peak
+  const side = board.parts.sides[0];
+  assert.ok(side.deckHalo.material.opacity > 0.4, 'the deck glows while you can draw');
+  assert.equal(board.parts.sides[1].deckHalo.material.opacity, 0, "the other player's does not");
+  assert.equal(side.powerHalo.material.opacity, 0, 'with "after draw" timing the power waits for the card');
+
+  model = step(board, model, { type: 'draw' }, 1000);
+  assert.ok(interactions(model).canUsePower);
+  board.tick(1000 + 350);
+  assert.equal(side.deckHalo.material.opacity, 0, 'no more glow once drawn');
+  assert.ok(side.powerHalo.material.opacity > 0.4, 'now the power you can use glows');
+});
