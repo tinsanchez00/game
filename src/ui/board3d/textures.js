@@ -463,18 +463,6 @@ export function textLabel(style = 'label', w = 512, h = 96) {
   };
 }
 
-/** A vertical fade (bright at the bottom) for light columns. */
-export function columnFade() {
-  return cached('fade', 8, 128, (ctx, w, h) => {
-    const g = ctx.createLinearGradient(0, h, 0, 0);
-    g.addColorStop(0, 'rgba(255,255,255,0.9)');
-    g.addColorStop(0.35, 'rgba(255,255,255,0.35)');
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
-  });
-}
-
 // --- glow halos ------------------------------------------------------------------------
 
 /**
