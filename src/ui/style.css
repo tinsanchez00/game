@@ -455,6 +455,8 @@ button:focus-visible { outline: 2px solid var(--shell-bright); outline-offset: 2
 .chev { width: 20px; height: 20px; fill: none; stroke: var(--gold); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .screen-title { margin: 0; font-family: var(--display); font-size: 22px; font-weight: 700; letter-spacing: 0.06em; color: var(--gold); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.field.multi { flex-direction: column; align-items: flex-start; gap: 8px; padding: 6px 0; }
+.chip.small { min-height: 36px; padding: 0 12px; font-size: 13px; }
 .chip.on { background: var(--gold); border-color: var(--gold); color: var(--lapis-deep); font-weight: 500; }
 .mode-summary { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid #3A4A7A; border-radius: 8px; background: #1A2A57; }
 .mode-name { font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--gold); }

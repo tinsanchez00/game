@@ -161,3 +161,27 @@ test('every card is public: the other player\'s power is face up on the flat boa
   let s = updateShell(initShell(null, 'flat'), { type: 'menu-quick' }, { newGame: () => ({ ...game, held }) });
   assert.match(viewShell(s), /The Hermit/);
 });
+
+test('game mode: choose which powers are in the deck', () => {
+  let s = act(act(initShell(), 'menu-mode'), 'menu-customize');
+  let html = viewShell(s);
+  assert.match(html, /Powers in the deck/);
+  assert.equal((html.match(/data-key="deck"/g) ?? []).length, 5);
+  s = act(s, 'menu-set', { key: 'deck', value: 'devil' });
+  s = act(s, 'menu-set', { key: 'deck', value: 'tower' });
+  assert.deepEqual(s.menu.settings.deck, ['hanged-man', 'lovers', 'hermit']);
+  assert.deepEqual(changedKeys('standard', s.menu.settings), ['deck']);
+  assert.match(viewShell(s), /3 powers: no Devil, no Tower/);
+  s = act(s, 'menu-set', { key: 'deck', value: 'tower' });
+  assert.deepEqual(s.menu.settings.deck, ['hanged-man', 'lovers', 'tower', 'hermit'], 'kept in order');
+  let started = act(s, 'menu-start');
+  assert.deepEqual([...started.play.game.config.powerDeck].sort(), ['hanged-man', 'hermit', 'lovers', 'tower']);
+  assert.equal(started.play.game.powerDeck.length, 4);
+
+  // Powers off hides the row; an empty deck plays like powers off.
+  assert.doesNotMatch(viewShell(act(s, 'menu-set', { key: 'powers', value: 'false' })), /Powers in the deck/);
+  for (const id of ['hanged-man', 'lovers', 'tower', 'hermit']) s = act(s, 'menu-set', { key: 'deck', value: id });
+  assert.deepEqual(s.menu.settings.deck, []);
+  started = act(s, 'menu-start');
+  assert.equal(started.play.game.config.powers, false);
+});

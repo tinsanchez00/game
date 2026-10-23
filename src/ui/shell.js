@@ -11,7 +11,7 @@
 import { createGame } from '../rules/index.js';
 import { initModel, update as updateGame } from './controller.js';
 import { MENU, TEXT } from './labels.js';
-import { FIELDS, PRESETS, changedKeys, parseValue, presetSettings, toConfig } from './modes.js';
+import { FIELDS, PRESETS, changedKeys, parseValue, presetSettings, toConfig, toggleValue } from './modes.js';
 import { view as gameView } from './view.js';
 
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -52,8 +52,13 @@ export function updateShell(s, action, { newGame = (config) => createGame({ conf
       return menu({ preset: action.value, settings: presetSettings(action.value) });
     case 'menu-customize':
       return menu({ open: !s.menu.open });
-    case 'menu-set':
-      return menu({ settings: { ...s.menu.settings, [action.key]: parseValue(action.key, action.value) } });
+    case 'menu-set': {
+      const field = FIELDS.find((f) => f.key === action.key);
+      const value = field?.kind === 'multi'
+        ? toggleValue(action.key, s.menu.settings[action.key], action.value)
+        : parseValue(action.key, action.value);
+      return menu({ settings: { ...s.menu.settings, [action.key]: value } });
+    }
     case 'menu-start':
       return { ...s, screen: 'game', play: initModel(newGame(toConfig(s.menu.settings))) };
     default:
@@ -122,6 +127,14 @@ function fieldRow(field, value, changed) {
   const name = esc(MENU.field[field.key]);
   const dot = changed ? `<span class="changed" aria-label="${esc(MENU.changedMark)}"></span>` : '';
   let control;
+  if (field.kind === 'multi') {
+    // A row of chips, each on or off.
+    const chips = field.values.map((v) => {
+      const on = value.includes(v);
+      return `<button type="button" class="chip small${on ? ' on' : ''}" aria-pressed="${on}" data-action="menu-set" data-key="${field.key}" data-value="${esc(v)}">${esc(MENU.value[field.key]?.[v] ?? v)}</button>`;
+    });
+    return `<div class="field multi"><span class="field-name">${name}${dot}</span><div class="chips" role="group" aria-label="${name}">${chips.join('')}</div></div>`;
+  }
   if (field.kind === 'switch') {
     control = `<button type="button" class="switch${value ? ' on' : ''}" role="switch" aria-checked="${value}" aria-label="${name}" data-action="menu-set" data-key="${field.key}" data-value="${!value}"><span></span></button>`;
   } else {
@@ -142,7 +155,9 @@ function modeView(s) {
     return `<button type="button" class="chip${on ? ' on' : ''}" aria-pressed="${on}" data-action="menu-preset" data-value="${p.id}">${esc(MENU.preset[p.id].name)}</button>`;
   }).join('');
   const title = `${MENU.preset[preset].name}${changed.length ? ` · ${MENU.changed}` : ''}`;
-  const fields = open ? FIELDS.map((f) => fieldRow(f, settings[f.key], changed.includes(f.key))).join('') : '';
+  const fields = open
+    ? FIELDS.filter((f) => !f.when || f.when(settings)).map((f) => fieldRow(f, settings[f.key], changed.includes(f.key))).join('')
+    : '';
   return `<div class="app menu mode-screen">
     <header class="menu-head">
       <button type="button" class="icon-btn" data-action="menu-back" aria-label="${esc(MENU.back)}">${chevronLeft()}</button>

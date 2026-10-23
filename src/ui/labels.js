@@ -102,6 +102,8 @@ export const TEXT = {
 };
 
 // Start and game-mode screens (placeholder copy).
+const MENU_DECK = { 'hanged-man': 'Hanged Man', lovers: 'Lovers', devil: 'Devil', tower: 'Tower', hermit: 'Hermit' };
+
 export const MENU = {
   gameName: '[Game name]',
   tagline: 'A race inspired by the Royal Game of Ur',
@@ -130,6 +132,7 @@ export const MENU = {
   field: {
     units: 'Units each',
     powers: 'Powers',
+    deck: 'Powers in the deck',
     timing: 'Use a power',
     lovers: 'The Lovers',
     hanged: 'The Hanged Man',
@@ -142,12 +145,16 @@ export const MENU = {
   },
   value: {
     timing: { afterDraw: 'After draw', beforeDraw: 'Before draw' },
+    deck: MENU_DECK,
     lovers: { jump: 'Jump', pairing: 'Pairing' },
     hanged: { extra: 'Extra turn', forward: 'Forward card' },
   },
   /** One line describing a settings object. */
   summary: (s) => {
-    const parts = [`${s.units} units each`, s.powers ? 'all five powers' : 'no powers', `${s.jokers} Joker${s.jokers === 1 ? '' : 's'}`];
+    const n = s.deck.length;
+    const missing = Object.entries(MENU_DECK).filter(([id]) => !s.deck.includes(id)).map(([, name]) => `no ${name}`);
+    const powers = !s.powers || n === 0 ? 'no powers' : n === 5 ? 'all five powers' : `${n} power${n === 1 ? '' : 's'}: ${missing.join(', ')}`;
+    const parts = [`${s.units} units each`, powers, `${s.jokers} Joker${s.jokers === 1 ? '' : 's'}`];
     if (s.powers && s.timing !== 'afterDraw') parts.push('powers before draw');
     if (s.powers && s.lovers !== 'jump') parts.push('the Lovers: Pairing');
     if (s.powers && s.hanged !== 'extra') parts.push('the Hanged Man: Forward card');

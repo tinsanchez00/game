@@ -1,10 +1,11 @@
 // Game modes for the "Game mode" screen: named presets of a small settings
 // object, and its translation into a rules config. Pure: no DOM.
 //
-// settings = { units, powers, timing, lovers, hanged, jokers,
+// settings = { units, powers, deck, timing, lovers, hanged, jokers,
 //              commanderLock, escort, towersProtect, towerExtraTurn, exactAscend }
+// deck: the powers in the power deck (ids, in POWER_IDS order).
 
-import { DEFAULT_CONFIG, JOKER } from '../rules/index.js';
+import { DEFAULT_CONFIG, JOKER, POWER_IDS } from '../rules/index.js';
 
 const D = DEFAULT_CONFIG;
 const NUMBERS = D.moveDeck.filter((c) => c !== JOKER);
@@ -13,6 +14,7 @@ const NUMBERS = D.moveDeck.filter((c) => c !== JOKER);
 export const STANDARD = Object.freeze({
   units: D.soldiers + D.commanders,
   powers: D.powers,
+  deck: Object.freeze(POWER_IDS.filter((id) => D.powerDeck.includes(id))),
   timing: D.powerTiming,
   lovers: D.rules.loversLine ? 'jump' : 'pairing',
   hanged: D.rules.hangedTurn ? 'extra' : 'forward',
@@ -36,11 +38,13 @@ export const PRESETS = Object.freeze([
 
 /**
  * Customizable settings in screen order. kind 'choice' lists its values;
- * 'switch' is on/off.
+ * 'switch' is on/off; 'multi' is any subset of its values. `when`: shown only
+ * when it returns true for the current settings.
  */
 export const FIELDS = Object.freeze([
   { key: 'units', kind: 'choice', values: [5, 6] },
   { key: 'powers', kind: 'switch' },
+  { key: 'deck', kind: 'multi', values: [...POWER_IDS], when: (s) => s.powers },
   { key: 'timing', kind: 'choice', values: ['afterDraw', 'beforeDraw'] },
   { key: 'lovers', kind: 'choice', values: ['jump', 'pairing'] },
   { key: 'hanged', kind: 'choice', values: ['extra', 'forward'] },
@@ -58,10 +62,24 @@ export function presetSettings(id) {
   return { ...STANDARD, ...preset.changes };
 }
 
+const same = (a, b) => (Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((x, i) => x === b[i]) : a === b);
+
 /** Keys whose value differs from the preset's. */
 export function changedKeys(presetId, settings) {
   const base = presetSettings(presetId);
-  return FIELDS.map((f) => f.key).filter((k) => settings[k] !== base[k]);
+  return FIELDS.map((f) => f.key).filter((k) => !same(settings[k], base[k]));
+}
+
+/** A 'multi' setting with `value` switched on or off (kept in the field's order). */
+export function toggleValue(key, current, raw) {
+  const field = FIELDS.find((f) => f.key === key);
+  if (field?.kind !== 'multi') throw new Error(`${key} is not a multi setting`);
+  const value = field.values.find((v) => String(v) === String(raw));
+  if (value === undefined) throw new Error(`bad value ${raw} for ${key}`);
+  const on = new Set(current);
+  if (on.has(value)) on.delete(value);
+  else on.add(value);
+  return field.values.filter((v) => on.has(v));
 }
 
 /** Reads a field value sent by the screen (a string) as its setting type. */
@@ -78,7 +96,9 @@ export function parseValue(key, raw) {
 export function toConfig(s) {
   return {
     soldiers: s.units - D.commanders,
-    powers: s.powers,
+    // No power left in the deck plays like powers off: a Joker means no move.
+    powers: s.powers && s.deck.length > 0,
+    powerDeck: s.deck.length > 0 ? [...s.deck] : [...D.powerDeck],
     powerTiming: s.timing,
     moveDeck: [...NUMBERS, ...Array(s.jokers).fill(JOKER)],
     rules: {
