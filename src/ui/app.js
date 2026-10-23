@@ -58,7 +58,7 @@ export function startApp(root) {
   }
 
   // Android, not fullscreen yet (e.g. the page was opened again): a small button to go back.
-  const fullscreenOffered = () => boardStyle() === '3d' && /Android/i.test(navigator.userAgent)
+  const fullscreenOffered = () => boardStyle() !== 'flat' && /Android/i.test(navigator.userAgent)
     && document.fullscreenEnabled && !document.fullscreenElement;
 
   function addFullscreenButton() {
@@ -87,7 +87,7 @@ export function startApp(root) {
       }
       if (!host.isConnected) return; // a newer render replaced this one
       three.view.attach(host);
-      three.view.sync(play, interactions(play), { animate });
+      three.view.sync(play, interactions(play), { animate, table: shell.board === 'table' });
     };
     if (three.view || three.failed) draw();
     else loadThree().then(draw);
@@ -96,7 +96,7 @@ export function startApp(root) {
   // Android: games go fullscreen and lock to landscape (3D board only).
   // Must run inside the tap that starts the game; browsers refuse otherwise.
   function enterGameScreen() {
-    if (boardStyle() !== '3d' || !/Android/i.test(navigator.userAgent)) return;
+    if (boardStyle() === 'flat' || !/Android/i.test(navigator.userAgent)) return;
     const el = document.documentElement;
     if (document.fullscreenElement || !el.requestFullscreen) return;
     el.requestFullscreen({ navigationUI: 'hide' })
@@ -138,5 +138,5 @@ export function startApp(root) {
 
   render();
   // Start loading the 3D board early so the first game opens without a wait.
-  if (boardStyle() === '3d') loadThree();
+  if (boardStyle() !== 'flat') loadThree();
 }

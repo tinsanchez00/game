@@ -93,7 +93,7 @@ export function createBoardView({ onAction }) {
     resize();
   }
 
-  function sync(nextModel, interactions, { animate = false } = {}) {
+  function sync(nextModel, interactions, { animate = false, table = false } = {}) {
     const sig = JSON.stringify(nextModel.game.config);
     if (!board || sig !== configSig) {
       board?.dispose();
@@ -105,7 +105,7 @@ export function createBoardView({ onAction }) {
     }
     model = nextModel;
     ix = interactions;
-    board.sync(model, interactions, { animate: animate && !reducedMotion?.matches, now: performance.now() });
+    board.sync(model, interactions, { animate: animate && !reducedMotion?.matches, now: performance.now(), table });
     wake();
   }
 

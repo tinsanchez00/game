@@ -69,6 +69,7 @@ export const CAMERA = {
   margin: 0.94, // fraction of the view the table may fill
   zoom: 0.8, // distance factor while a unit is selected
   focus: 0.5, // how far the view centre moves toward the selection
+  tableTilt: THREE.MathUtils.degToRad(12), // phone on the table: a light lean toward the current player
 };
 
 const HOP_HEIGHT = 0.55;
@@ -382,6 +383,7 @@ function buildTrays(layout, surfaces, yawers) {
         lock.add(m);
       }
       lock.visible = false;
+      lock.userData.owner = Number(t.key.split(':')[1]);
       yawers.push(lock);
       g.add(lock);
       locks.set(t.key, lock);
@@ -444,10 +446,12 @@ function buildSide(L, player, yawers) {
   deckHalo.position.y = 0.004;
   deck.add(deckHalo, stack, top.yaw, deckSlot);
   for (const m of [stack, top.front, top.back]) m.userData = { action: 'draw', player };
+  top.yaw.userData.owner = player;
   yawers.push(top.yaw);
 
   const place = (card, at) => {
     card.yaw.position.set(at.x, TABLE_Y + 0.01, at.z);
+    card.yaw.userData.owner = player;
     yawers.push(card.yaw);
     group.add(card.yaw);
     return card;
@@ -475,6 +479,7 @@ function buildSide(L, player, yawers) {
   const mini = (i) => {
     while (minis.length <= i) {
       const m = makeCard(MINI.w, MINI.d);
+      m.yaw.userData.owner = player;
       yawers.push(m.yaw);
       group.add(m.yaw);
       minis.push(m);
@@ -594,10 +599,27 @@ export function createBoardScene(config) {
     targetGoal: new THREE.Vector3(),
     zoom: 1,
     zoomGoal: 1,
+    table: false, // phone on the table: the board keeps its orientation
+    lean: 1, // table mode: +1 leans toward player 0's side, -1 toward player 1's
+    leanFrom: 1,
+    leanGoal: 1,
+    leanStart: -Infinity,
   };
 
   function placeCamera() {
     const dist = cam.fit * cam.zoom;
+    if (cam.table) {
+      // Screen up stays toward player 1's side; the camera leans over the current player's edge.
+      const t = CAMERA.tableTilt * cam.lean;
+      camera.position.set(cam.target.x, cam.target.y + Math.cos(t) * dist, cam.target.z + Math.sin(t) * dist);
+      camera.up.set(0, 0, -1);
+      camera.lookAt(cam.target);
+      camera.updateMatrixWorld();
+      const lampTurn = ((1 - cam.lean) / 2) * Math.PI;
+      sun.position.copy(SUN).applyAxisAngle(UP, lampTurn);
+      scene.environmentRotation.y = lampTurn;
+      return;
+    }
     const s = Math.sin(CAMERA.tilt);
     camera.position.set(
       cam.target.x + Math.sin(cam.azimuth) * s * dist,
@@ -616,8 +638,9 @@ export function createBoardScene(config) {
     const { halfX, halfZ } = layout.table;
     const corners = [];
     for (const x of [-halfX, halfX]) for (const z of [-halfZ, halfZ]) for (const y of [TABLE_Y, 0.8]) corners.push(new THREE.Vector3(x, y, z));
-    const saved = { az: cam.azimuth, zoom: cam.zoom, target: cam.target.clone() };
+    const saved = { az: cam.azimuth, zoom: cam.zoom, target: cam.target.clone(), lean: cam.lean };
     cam.azimuth = 0;
+    cam.lean = 1;
     cam.zoom = 1;
     cam.target.set(0, 0, 0);
     let lo = 2;
@@ -634,6 +657,7 @@ export function createBoardScene(config) {
       else lo = cam.fit;
     }
     cam.azimuth = saved.az;
+    cam.lean = saved.lean;
     cam.zoom = saved.zoom;
     cam.target.copy(saved.target);
     return hi;
@@ -865,11 +889,12 @@ export function createBoardScene(config) {
       s.shownDrawn = card;
       s.labels.drawn.set(card !== null && game.campsite ? TEXT.campCard : TEXT.drawn);
 
-      // Power: face up for the viewer, a card back for the other player.
+      // Power: face up for both players.
       const held = game.held[p];
       s.power.yaw.visible = Boolean(held);
       s.powerSlot.visible = !held;
-      if (held) s.power.setFront(p === viewerNow ? TX.powerFace(held) : TX.cardBack(), p === viewerNow ? C.shell : C.lapisCard);
+      // Every card is public: both held powers lie face up.
+      if (held) s.power.setFront(TX.powerFace(held));
       s.power.setBack(TX.cardBack(), C.lapisCard);
       s.labels.power.set(held ? TEXT.power : TEXT.noPower);
       if (held && p === game.current && ix.canUsePower) glow.power = s;
@@ -960,9 +985,22 @@ export function createBoardScene(config) {
     return layout.byKey.get(key) ?? layout.trays.get(key) ?? null;
   }
 
-  function syncCamera(ix, viewerNow, animate, now) {
+  function syncCamera(ix, viewerNow, animate, now, current = viewerNow) {
     const goal = viewerNow === 1 ? Math.PI : 0;
-    if (viewer === null || !animate) {
+    if (cam.table) {
+      cam.azimuth = 0;
+      cam.spin = null;
+      const lean = current === 1 ? -1 : 1;
+      if (!animate) {
+        cam.lean = lean;
+        cam.leanGoal = lean;
+        cam.leanStart = -Infinity;
+      } else if (lean !== cam.leanGoal) {
+        cam.leanFrom = cam.lean;
+        cam.leanGoal = lean;
+        cam.leanStart = now;
+      }
+    } else if (viewer === null || !animate) {
       cam.azimuth = goal;
       cam.spin = null;
     } else if (viewerNow !== viewer) {
@@ -991,6 +1029,20 @@ export function createBoardScene(config) {
     placeCamera();
   }
 
+  /**
+   * Cards and labels face the person reading them: with the phone passed, the
+   * viewer; with the phone on the table, each side faces its own player.
+   */
+  function faceViewers() {
+    for (const y of yawers) y.rotation.y = cam.table ? (y.userData.owner === 1 ? Math.PI : 0) : cam.azimuth;
+    sides.forEach((s, p) => {
+      for (const label of Object.values(s.labels)) {
+        if (label.sprite) label.sprite.material.rotation = cam.table && p === 1 ? Math.PI : 0;
+      }
+    });
+    hud.rotation.z = cam.table && currentPlayer === 1 ? Math.PI : 0;
+  }
+
   /** Labels keep the same size on screen on both sides of the table. */
   function scaleLabels() {
     const tan = Math.tan(THREE.MathUtils.degToRad(CAMERA.fov / 2));
@@ -1011,6 +1063,12 @@ export function createBoardScene(config) {
 
   function stepCamera(now) {
     let moving = false;
+    if (cam.table && cam.lean !== cam.leanGoal) {
+      const t = clamp01((now - cam.leanStart) / TIMING.spin);
+      cam.lean = lerp(cam.leanFrom, cam.leanGoal, easeInOut(t));
+      if (t >= 1) cam.lean = cam.leanGoal;
+      else moving = true;
+    }
     if (cam.spin) {
       const t = clamp01((now - cam.spin.start) / TIMING.spin);
       cam.azimuth = lerp(cam.spin.from, cam.spin.to, easeInOut(t));
@@ -1026,7 +1084,7 @@ export function createBoardScene(config) {
       cam.zoom = cam.zoomGoal;
     }
     placeCamera();
-    for (const y of yawers) y.rotation.y = cam.azimuth;
+    faceViewers();
     scaleLabels();
     return moving;
   }
@@ -1216,8 +1274,13 @@ export function createBoardScene(config) {
 
   // --- public ---
 
-  function sync(model, ix, { animate = false, now = performance.now() } = {}) {
+  function sync(model, ix, { animate = false, now = performance.now(), table = false } = {}) {
     const game = model.game;
+    if (table !== cam.table) {
+      cam.table = table;
+      cam.fit = fitDistance();
+      animate = false; // a new seat: no animation from the old view
+    }
     const anim = animate && lastGame !== null;
     syncing = game;
     currentPlayer = game.current;
@@ -1230,8 +1293,8 @@ export function createBoardScene(config) {
     syncLines(ix);
     syncCards(game, ix, model.ui.viewer, anim, now);
     syncDraft(game, ix, anim, now);
-    syncCamera(ix, model.ui.viewer, anim, now);
-    for (const y of yawers) y.rotation.y = cam.azimuth;
+    syncCamera(ix, model.ui.viewer, anim, now, game.current);
+    faceViewers();
     scaleLabels();
     lastGame = game;
     syncing = null;

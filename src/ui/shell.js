@@ -5,7 +5,7 @@
 //   screen,  'start' | 'mode' | 'game'
 //   play,    the game model ({ game, ui }) or null
 //   menu,    { preset, settings, open } for the game-mode screen
-//   board,   '3d' | 'flat' — how the game board is drawn
+//   board,   '3d' (pass the phone) | 'table' (phone on the table) | 'flat'
 // }
 
 import { createGame } from '../rules/index.js';
@@ -21,7 +21,7 @@ function freshMenu() {
   return { preset: 'standard', settings: presetSettings('standard'), open: false };
 }
 
-export const BOARD_STYLES = Object.freeze(['3d', 'flat']);
+export const BOARD_STYLES = Object.freeze(['3d', 'table', 'flat']);
 
 /** A shell on the start screen; `play` is a saved game to continue, if any. */
 export function initShell(play = null, board = '3d') {
@@ -37,14 +37,17 @@ export function updateShell(s, action, { newGame = (config) => createGame({ conf
   switch (action.type) {
     case 'menu-quick':
       return { ...s, screen: 'game', play: initModel(newGame({})) };
+    case 'menu-continue':
+      return s.play ? seated({ ...s, screen: 'game' }) : s;
     case 'menu-mode':
       return { ...s, screen: 'mode', menu: freshMenu() };
-    case 'menu-continue':
-      return s.play ? { ...s, screen: 'game' } : s;
     case 'menu-back':
       return { ...s, screen: 'start' };
     case 'menu-board':
-      return s.screen === 'start' ? { ...s, board: s.board === 'flat' ? '3d' : 'flat' } : s;
+      // With a value: pick that style; without: the flat-board switch.
+      if (s.screen !== 'start') return s;
+      if (BOARD_STYLES.includes(action.value)) return { ...s, board: action.value };
+      return { ...s, board: s.board === 'flat' ? '3d' : 'flat' };
     case 'menu-preset':
       return menu({ preset: action.value, settings: presetSettings(action.value) });
     case 'menu-customize':
@@ -59,7 +62,14 @@ export function updateShell(s, action, { newGame = (config) => createGame({ conf
   if (s.screen !== 'game' || !s.play) return s;
   // Leaving a game (after its confirm, or from the win screen) goes back to the start screen.
   if (action.type === 'new-confirm') return { ...s, screen: 'start', play: updateGame(s.play, { type: 'new-cancel' }) };
-  return { ...s, play: updateGame(s.play, action) };
+  return seated({ ...s, play: updateGame(s.play, action) });
+}
+
+/** Phone on the table: no handing over, the view always belongs to the player whose turn it is. */
+function seated(s) {
+  const play = s.play;
+  if (s.board !== 'table' || !play || play.game.winner !== null || play.ui.viewer === play.game.current) return s;
+  return { ...s, play: { ...play, ui: { ...play.ui, viewer: play.game.current } } };
 }
 
 // --- views --------------------------------------------------------------------
@@ -83,11 +93,21 @@ function startView(s) {
       ${btn('menu-mode', MENU.mode)}
       ${cont}
     </div>
+    ${s.board === 'flat' ? '' : seatChoice(s.board)}
     <div class="start-foot">
       <p class="hint">${esc(MENU.quickHint)}</p>
       <button type="button" class="link quiet" data-action="menu-board">${esc(MENU.boardSwitch(s.board))}</button>
     </div>
   </div>`;
+}
+
+/** Pass the phone, or set it on the table between the players. */
+function seatChoice(board) {
+  const opts = ['3d', 'table'].map((v) => {
+    const on = v === board;
+    return `<button type="button" class="seg-opt${on ? ' on' : ''}" aria-pressed="${on}" data-action="menu-board" data-value="${v}">${esc(MENU.seat[v])}</button>`;
+  });
+  return `<div class="seg seat" role="group" aria-label="${esc(MENU.seatLabel)}">${opts.join('')}</div>`;
 }
 
 function crestIcon() {

@@ -110,6 +110,9 @@ export const MENU = {
   quickHint: 'Quick game: standard rules, 6 units each',
   // Placeholder wording: the board style switch at the bottom of the start screen.
   boardSwitch: (board) => (board === 'flat' ? 'Flat board · switch to 3D' : '3D board · switch to flat'),
+  // Placeholder wording: how the phone is used.
+  seatLabel: 'How you play',
+  seat: { '3d': 'Pass the phone', table: 'Phone on the table' },
   back: 'Back',
   start: 'Start',
   customize: 'Customize',

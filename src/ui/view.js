@@ -111,8 +111,9 @@ function discardRow(g, player) {
 
 function opponentPanel(g, player) {
   const c = counts(g, player);
+  // Every card is public: the other player's power is face up too.
   const power = g.held[player]
-    ? '<div class="card back"></div>'
+    ? `<div class="card face power">${powerCard(g.held[player])}</div>`
     : `<div class="card empty">${esc(TEXT.noPower)}</div>`;
   return `<section class="panel opponent" aria-label="${esc(team(player))}">
     <div class="panel-head">
@@ -341,7 +342,7 @@ function menuIcon() {
  * The 3D page: a full-screen stage the app fills with its canvas (board3d/),
  * and a flat overlay — menu button, status pill and the turn's buttons.
  */
-function view3d(m, ix) {
+function view3d(m, ix, { table = false } = {}) {
   const g = m.game;
   const { status, controls } = turnControls(m, ix, { cards3d: true });
   const events = eventsText(m);
@@ -352,8 +353,11 @@ function view3d(m, ix) {
   const menu = open
     ? `<div class="menu-pop" id="game-menu"><p class="menu-note">${esc(TEXT.testMode)}</p>${restart}</div>`
     : '';
+  // Phone on the table: the overlay turns to face the player whose turn it is.
+  const flipped = table && g.current === 1;
   return `<div class="app3d">
     <div class="stage" data-board3d role="img" aria-label="${esc(TEXT.boardLabel)}"></div>
+    <div class="hud-layer${flipped ? ' flipped' : ''}">
     <header class="hud-top">
       <button type="button" class="icon-btn hud-menu" data-action="menu" aria-label="${esc(TEXT.menu)}" aria-expanded="${open}" aria-controls="game-menu">${menuIcon()}</button>
       <div class="pill" aria-live="polite">
@@ -364,6 +368,7 @@ function view3d(m, ix) {
     ${menu}
     <div class="hud-actions">${controls}</div>
     ${ix.phase === 'won' ? winOverlay(g) : ''}
+    </div>
   </div>`;
 }
 
@@ -371,7 +376,7 @@ function view3d(m, ix) {
 export function view(m, { board: style = 'flat' } = {}) {
   const g = m.game;
   const ix = interactions(m);
-  if (style === '3d') return view3d(m, ix);
+  if (style === '3d' || style === 'table') return view3d(m, ix, { table: style === 'table' });
   const victims = new Set(ix.victims);
   const victimKeys = new Set(ix.victims.map((id) => unitKey(g, R.getUnit(g, id))));
   return `<div class="app">

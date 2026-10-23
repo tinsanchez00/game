@@ -328,3 +328,44 @@ test('the target stands apart from the other selectable pieces: its own colour, 
   assert.notEqual(dest.halo.material.color.getHex(), other.halo.material.color.getHex(), 'target colour differs from selectable');
   assert.ok(other.halo.material.opacity < loud * 0.6, 'other selectable cells pulse more quietly');
 });
+
+test('phone on the table: the board never turns; the camera leans toward the current player; cards face their owners', () => {
+  let model = initModel(gameWith({ 'p0-s1': 6 }, { drawn: 2 }));
+  model.game.held[1] = R.POWERS.TOWER;
+  const board = createBoardScene(model.game.config);
+  board.resize(844, 390);
+  board.sync(model, interactions(model), { animate: false, now: 0, table: true });
+  board.tick(0);
+  assert.equal(board.azimuth, 0);
+  assert.deepEqual(board.camera.up.toArray(), [0, 0, -1], "screen up stays toward player 1's side");
+  assert.ok(board.camera.position.z > 0, "leaning over player 0's edge");
+  assert.equal(board.parts.sides[0].power.yaw.rotation.y, 0);
+  assert.equal(board.parts.sides[1].power.yaw.rotation.y, Math.PI, "player 1's cards face player 1");
+
+  // Player 0 moves; the turn passes straight to player 1 (the shell seats the viewer).
+  model = update(model, { type: 'tap', key: G.cellId(0, 6) });
+  model = update(model, { type: 'confirm' });
+  model = { ...model, ui: { ...model.ui, viewer: model.game.current } };
+  assert.equal(model.game.current, 1);
+  board.sync(model, interactions(model), { animate: true, now: 1000, table: true });
+  board.tick(1000 + TIMING.spin + 1);
+  assert.equal(board.azimuth, 0, 'no spin');
+  assert.ok(board.camera.position.z < 0, "now leaning over player 1's edge");
+  assert.equal(board.parts.sides[1].power.yaw.rotation.y, Math.PI, 'cards still face their owners');
+  // Every cell can still be tapped.
+  for (const cell of board.layout.cells) assert.deepEqual(pickAt(board, cell.key), { type: 'tap', key: cell.key });
+});
+
+test('phone on the table: the draft cards turn to face the player drafting', () => {
+  const model = initModel(gameWith({}, { firstPlayer: 1, drawn: R.JOKER }));
+  const board = createBoardScene(model.game.config);
+  board.resize(844, 390);
+  board.sync(model, interactions(model), { animate: false, now: 0, table: true });
+  board.tick(TIMING.rise + 1);
+  const hud = board.parts.draftCards[0].parent;
+  assert.equal(hud.rotation.z, Math.PI);
+  const [a, b] = board.parts.draftCards;
+  const pa = board.screenOf(a);
+  assert.deepEqual(board.pick(pa.x, pa.y), { type: 'keep', index: 0 });
+  assert.ok(board.screenOf(a).x > board.screenOf(b).x, "the first card is on the drafting player's left");
+});

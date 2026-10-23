@@ -72,6 +72,10 @@ button { font: inherit; color: inherit; }
   user-select: none;
 }
 .app3d .stage { position: absolute; inset: 0; }
+.hud-layer { position: absolute; inset: 0; pointer-events: none; }
+.hud-layer.flipped { transform: rotate(180deg); }
+.menu-pop { pointer-events: auto; }
+.seg.seat { align-self: center; }
 .board3d-canvas {
   position: absolute;
   inset: 0;
