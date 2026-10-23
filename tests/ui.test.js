@@ -151,6 +151,9 @@ test('bots can play complete games through the screen without errors', () => {
 
 // --- specific screens ---------------------------------------------------------------
 
+/** Taps the held power and picks its upright side. */
+const useUpright = (m) => update(update(m, { type: 'use-power' }), { type: 'side-upright' });
+
 function modelWith(positions, { config, ...extra } = {}) {
   const base = R.createGame({ seed: 3, firstPlayer: 0, config });
   const game = {
@@ -198,7 +201,7 @@ test('The Devil marks the units it would kill before you confirm', () => {
   });
   m = update(m, { type: 'draw' });
   assert.ok(view(m).includes('data-action="use-power"'));
-  m = update(m, { type: 'use-power' });
+  m = useUpright(m);
   m = update(m, { type: 'tap', key: 'shared-5' });
   assert.deepEqual(interactions(m).victims, ['p1-s1']);
   assert.ok(view(m).includes('doomed'));
@@ -216,7 +219,7 @@ test('after draw: the screen offers the held power on a number card and on a jok
   m = update(m, { type: 'draw' });
   assert.equal(interactions(m).phase, 'move');
   assert.ok(interactions(m).canUsePower);
-  m = update(m, { type: 'use-power' });
+  m = useUpright(m);
   assert.equal(m.game.current, 1);
   assert.equal(m.game.held[0], null);
 
@@ -245,7 +248,7 @@ test('The Hanged Man: back with the drawn card, then an extra turn', () => {
     held: [R.POWERS.HANGED_MAN, null],
   });
   m = update(m, { type: 'draw' });
-  m = update(m, { type: 'use-power' });
+  m = useUpright(m);
   assert.ok(view(m).includes('move a unit 3 back'));
   m = update(m, { type: 'tap', key: 'shared-8' });
   m = update(m, { type: 'confirm' });
@@ -264,7 +267,7 @@ test('The Hanged Man (forward-card version): back with the drawn card, then the 
     held: [R.POWERS.HANGED_MAN, null],
   });
   m = update(m, { type: 'draw' });
-  m = update(m, { type: 'use-power' });
+  m = useUpright(m);
   assert.equal(interactions(m).phase, 'move');
   assert.ok(view(m).includes('move a unit 3 back'));
   m = update(m, { type: 'tap', key: 'shared-8' });
@@ -321,7 +324,7 @@ function loversModel(positions, deck = [3, 1]) {
     moveDecks: [{ draw: deck, discard: [] }, { draw: [1], discard: [] }],
   });
   m = update(m, { type: 'draw' });
-  return update(m, { type: 'use-power' });
+  return useUpright(m);
 }
 
 test('the Lovers: the card moves as usual, then a line, Jump and Stay offer the jump', () => {
@@ -400,8 +403,25 @@ test('upright from the side choice works as before (targets for the Devil)', () 
   assert.deepEqual(m.game.stars, [2, 0]);
 });
 
-test('without stars the power is used upright straight away', () => {
-  const m = update(holding(R.POWERS.TOWER, [0, 3]), { type: 'use-power' });
+test('without stars both sides still show; only upright can be picked', () => {
+  let m = update(holding(R.POWERS.TOWER, [0, 3]), { type: 'use-power' });
+  const ix = interactions(m);
+  assert.equal(ix.phase, 'side');
+  assert.ok(ix.canUpright && !ix.canUpsideDown);
+  assert.match(view(m), /data-action="side-upside" disabled/);
+  assert.equal(update(m, { type: 'side-upside' }), m);
+  m = update(m, { type: 'side-upright' });
+  assert.equal(m.game.held[0], null);
+  assert.equal(m.game.current, 1);
+});
+
+test('with upside-down powers switched off, a tap uses the power upright at once', () => {
+  const base = modelWith({ 'p0-s1': 8 }, {
+    config: { rules: { upsideDown: false } },
+    moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.TOWER, null],
+  });
+  const m = update(update(base, { type: 'draw' }), { type: 'use-power' });
   assert.equal(m.game.held[0], null);
   assert.equal(m.game.current, 1);
 });

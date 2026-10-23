@@ -261,7 +261,7 @@ test('tapping your glowing power card uses it', () => {
   const ix = interactions(model);
   assert.ok(allowed(pickAt(board, mine), model, ix));
   assert.ok(!allowed(pickAt(board, board.parts.sides[1].power.front), model, ix), "not the other player's");
-  const after = update(model, { type: 'use-power' });
+  const after = update(update(model, { type: 'use-power' }), { type: 'side-upright' });
   assert.equal(after.game.held[0], null, 'The Tower was used');
 });
 
@@ -299,7 +299,7 @@ test('The Tower strikes the towers with lightning before the pieces there fall',
   let model = initModel(gameWith({ 'p1-s1': 7, 'p0-s1': 2 }, { drawn: 2 }));
   model.game.held[0] = R.POWERS.TOWER;
   const board = sceneFor(model);
-  model = step(board, model, { type: 'use-power' }, 1000);
+  model = step(board, update(model, { type: 'use-power' }), { type: 'side-upright' }, 1000);
   assert.equal(R.getUnit(model.game, 'p1-s1').pos, R.HOME, 'the unit on the tower is gone');
   assert.ok(board.parts.effects.length >= 3, 'a strike on every tower');
   for (let t = 1000; t <= 4000; t += 50) board.tick(t);
@@ -375,7 +375,7 @@ test('The Hermit: the move onto an ally shows where the ally will be pushed, and
   let model = initModel(gameWith({ 'p0-s1': 6, 'p0-s2': 9 }, { drawn: 3 }));
   model.game.held[0] = R.POWERS.HERMIT;
   const board = sceneFor(model);
-  model = step(board, model, { type: 'use-power' }, 0);
+  model = step(board, update(model, { type: 'use-power' }), { type: 'side-upright' }, 0);
   assert.deepEqual(model.game.hermit, { stage: 'move', steps: 3 });
   assert.match(pageOf(model), /The Hermit · move a unit 3 onto an ally/);
   model = step(board, model, { type: 'tap', key: G.cellId(0, 6) }, 10);
@@ -430,7 +430,7 @@ test('a side that cannot be used is shown faded and ignores taps', () => {
   const board = sceneFor(model);
   board.tick(TIMING.rise + 1);
   const [a, b] = board.parts.draftCards;
-  assert.ok(a.material.opacity < b.material.opacity);
+  assert.ok(a.material.color.r < b.material.color.r, 'the unusable side is darkened');
   assert.ok(!allowed({ type: 'keep', index: 0 }, model, interactions(model)));
 });
 
@@ -441,4 +441,21 @@ test('each side shows its stars on a badge by the power card', () => {
   assert.ok(s0.labels.stars.yaw.visible && s1.labels.stars.yaw.visible);
   const off = sceneFor(initModel(gameWith({}, { config: { rules: { upsideDown: false } } })));
   assert.ok(!off.parts.sides[0].labels.stars.yaw.visible);
+});
+
+test('without stars, the upside-down card still rises, faded, and ignores taps', () => {
+  let model = initModel(gameWith({ 'p0-s1': 8 }, {
+    moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.TOWER, null],
+    stars: [0, 0],
+  }));
+  model = update(update(model, { type: 'draw' }), { type: 'use-power' });
+  assert.equal(interactions(model).phase, 'side');
+  const board = sceneFor(model);
+  board.tick(TIMING.rise + 1);
+  const [a, b] = board.parts.draftCards;
+  assert.ok(a.visible && b.visible);
+  assert.ok(b.material.color.r < a.material.color.r, 'the unusable side is darkened');
+  assert.ok(!allowed({ type: 'keep', index: 1 }, model, interactions(model)));
+  assert.ok(allowed({ type: 'keep', index: 0 }, model, interactions(model)));
 });

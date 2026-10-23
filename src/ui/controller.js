@@ -163,6 +163,8 @@ export function interactions(m) {
     canUsePower: false,
     power: g.held[g.current],
     cost: R.upsideDownCost(g.held[g.current]),
+    // The held card has an upside-down side to show (affordable or not).
+    hasUpsideDown: g.config.powers && g.config.rules.upsideDown && R.upsideDownCost(g.held[g.current]) !== null,
   };
   out.canUsePower = !m.ui.using && !m.ui.side && (out.canUpright || out.canUpsideDown)
     && phase !== 'won' && phase !== 'handoff';
@@ -299,8 +301,8 @@ export function update(m, action) {
 
     case 'use-power':
       if (!ix.canUsePower) return m;
-      // A power that can go upside down: pick a side first.
-      if (ix.canUpsideDown) return ui({ side: true, pick: null });
+      // A power with an upside-down side: pick a side first (shown even when it can't be paid).
+      if (ix.hasUpsideDown) return ui({ side: true, pick: null });
       return useUpright(m);
 
     case 'side-upright':
