@@ -227,6 +227,8 @@ button.deck { cursor: pointer; }
   background: var(--shell-dim);
   border: 1px solid var(--cell-line);
 }
+.art { display: flex; align-items: center; justify-content: center; }
+.power-icon { width: 80%; height: 80%; stroke: var(--lapis-deep); }
 .pname {
   font-family: var(--display);
   font-size: 11px;

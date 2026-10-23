@@ -263,3 +263,44 @@ test('tapping your glowing power card uses it', () => {
   const after = update(model, { type: 'use-power' });
   assert.equal(after.game.held[0], null, 'The Tower was used');
 });
+
+test('the move target shows what the move does: a ghost of the piece, coloured by the consequence', () => {
+  const colourAt = (board, key) => board.parts.surfaces.get(key).halo.material.color.getHex();
+  // Plain move: green. Capture: red.
+  let model = initModel(gameWith({ 'p0-s1': 6, 'p1-s1': 8 }, { drawn: 2 }));
+  let board = sceneFor(model);
+  model = step(board, model, { type: 'tap', key: G.cellId(0, 6) }, 0);
+  const capture = colourAt(board, G.cellId(0, 8));
+  assert.ok(board.parts.ghost?.visible, 'a ghost piece stands on the target');
+  const at = board.layout.byKey.get(G.cellId(0, 8));
+  assert.ok(Math.abs(board.parts.ghost.position.x - at.x) < 1e-6);
+
+  model = initModel(gameWith({ 'p0-s1': 6 }, { drawn: 2 }));
+  board = sceneFor(model);
+  model = step(board, model, { type: 'tap', key: G.cellId(0, 6) }, 0);
+  const plain = colourAt(board, G.cellId(0, 8));
+  assert.notEqual(plain, capture);
+
+  // Onto a tower (path cell 7): another colour again.
+  model = initModel(gameWith({ 'p0-s1': 5 }, { drawn: 2 }));
+  board = sceneFor(model);
+  model = step(board, model, { type: 'tap', key: G.cellId(0, 5) }, 0);
+  const tower = colourAt(board, G.cellId(0, 7));
+  assert.ok(new Set([plain, capture, tower]).size === 3, 'three different consequences, three colours');
+
+  model = update(model, { type: 'cancel' });
+  board.sync(model, interactions(model), { animate: true, now: 10 });
+  assert.ok(!board.parts.ghost, 'no ghost once nothing is selected');
+});
+
+test('The Tower strikes the towers with lightning before the pieces there fall', () => {
+  // A tower is path cell 7 (middle lane) and 14 (each end lane).
+  let model = initModel(gameWith({ 'p1-s1': 7, 'p0-s1': 2 }, { drawn: 2 }));
+  model.game.held[0] = R.POWERS.TOWER;
+  const board = sceneFor(model);
+  model = step(board, model, { type: 'use-power' }, 1000);
+  assert.equal(R.getUnit(model.game, 'p1-s1').pos, R.HOME, 'the unit on the tower is gone');
+  assert.ok(board.parts.effects.length >= 3, 'a strike on every tower');
+  for (let t = 1000; t <= 4000; t += 50) board.tick(t);
+  assert.equal(board.parts.effects.length, 0, 'effects clear up when done');
+});

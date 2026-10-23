@@ -7,6 +7,7 @@
 
 import * as THREE from '../../../vendor/three/three.module.js';
 import { POWER_INFO } from '../labels.js';
+import { POWER_ICONS } from '../powerIcons.js';
 
 const COL = {
   lapisDeep: '#142147',
@@ -338,6 +339,19 @@ export function powerFace(id) {
     roundRect(ctx, w * 0.16, 82, w * 0.68, 160, 8);
     ctx.fill();
     ctx.stroke();
+    const icon = POWER_ICONS[id];
+    if (icon) {
+      ctx.save();
+      const size = 128;
+      ctx.translate(w / 2 - size / 2, 82 + 80 - size / 2);
+      ctx.scale(size / 24, size / 24);
+      ctx.strokeStyle = COL.lapisDeep;
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (const d of icon) ctx.stroke(new Path2D(d));
+      ctx.restore();
+    }
     ctx.fillStyle = COL.lapisDeep;
     ctx.font = font(DISPLAY, 30);
     const lines = wrapWords(ctx, info.name, w - 40);

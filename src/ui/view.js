@@ -4,6 +4,7 @@
 import * as R from '../rules/index.js';
 import { interactions, unitKey } from './controller.js';
 import { campsiteGlyph, heartIcon, lockIcon, towerGlyph, unitIcon } from './icons.js';
+import { powerIconSvg } from './powerIcons.js';
 import { boardSlots } from './layout.js';
 import { OPTION_LABELS, POWER_INFO, TEAM_NAMES, TEXT } from './labels.js';
 
@@ -136,7 +137,7 @@ function tray(key, content, ix, victimKeys, label) {
 
 function powerCard(id, extra = '') {
   const info = POWER_INFO[id] ?? { name: id, numeral: '' };
-  return `<span class="numeral">${esc(info.numeral)}</span><span class="art"></span><span class="pname">${esc(info.name)}</span>${extra}`;
+  return `<span class="numeral">${esc(info.numeral)}</span><span class="art">${powerIconSvg(id)}</span><span class="pname">${esc(info.name)}</span>${extra}`;
 }
 
 function drawnCard(g) {

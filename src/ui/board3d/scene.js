@@ -35,8 +35,15 @@ const C = {
   teamObsidianRim: 0xd4af5a,
   ascTray: 0x1a2a57,
   room: 0x120d09, // the dark room around the table
-  glow: 0x4fe8d6, // what you can act on (placeholder colour)
-  glowSel: 0xc8fff7, // the current selection
+  glow: 0x8fe3a4, // what you can act on: soft green (placeholder colour)
+  glowSel: 0xdcffe5, // the current selection
+  // The destination shows the consequence of the move (placeholder colours).
+  destMove: 0x5fd67c,
+  destTower: 0x8fbfff, // safe on a tower
+  destCamp: 0xf2b45a, // campsite: the unit moves again
+  destAscend: 0xf6d77a, // ascends
+  hanged: 0xa98cff,
+  hermit: 0xffd08a,
   wood: 0x3a2416,
   boardWood: 0x5a3820,
   felt: 0x16245a,
@@ -569,6 +576,11 @@ export function createBoardScene(config) {
   let pulseKeys = new Set();
   let doomed = new Set();
   let glowUnits = new Set(); // pieces you can act on
+  const ghosts = new Map(); // 'type:player' -> translucent piece showing where a move lands
+  let ghost = null; // { obj, color }
+  const effects = []; // { update(t) -> void, dur, start, done() }
+  const effectGroup = new THREE.Group();
+  scene.add(effectGroup);
   const glow = { deck: null, power: null }; // cards that breathe: the deck to draw from, a power ready to use
 
   // Camera state: azimuth turns around the table; view centre and zoom follow the selection.
@@ -664,9 +676,9 @@ export function createBoardScene(config) {
     return Math.max(1, Math.round(Math.abs(ca.col - cb.col) + Math.abs(ca.row - cb.row)));
   }
 
-  function syncUnits(game, animate, now) {
+  function syncUnits(game, animate, now, hitDelay = 0) {
     const places = unitPlacements(game, layout);
-    let landing = 0; // when attackers land: captures wait for it
+    let landing = hitDelay; // when attackers land (or a power strikes): captures wait for it
     const pending = [];
     for (const unit of game.units) {
       const p = ensurePiece(unit);
@@ -735,6 +747,15 @@ export function createBoardScene(config) {
 
   // --- highlights ---
 
+  function destColor(key, victimKeys) {
+    if (victimKeys.has(key)) return C.carnelian;
+    if (key.startsWith('asc:')) return C.destAscend;
+    const cell = layout.byKey.get(key);
+    if (cell?.tower) return C.destTower;
+    if (cell?.campsite) return C.destCamp;
+    return C.destMove;
+  }
+
   function syncHighlights(ix) {
     const victimIds = new Set(ix.victims ?? []);
     const victimKeys = new Set();
@@ -754,10 +775,15 @@ export function createBoardScene(config) {
       c.frame.material.color.setHex(C.glow);
       if (can || dest) c.frame.material.opacity = 0.9;
       if (dest) {
-        c.fill.material.color.setHex(C.glow);
-        c.fill.material.opacity = 0.28;
+        const k = destColor(key, victimKeys);
+        c.fill.material.color.setHex(k);
+        c.fill.material.opacity = 0.38;
+        c.frame.material.color.setHex(k);
+        c.frame.material.opacity = 1;
+        c.halo.material.color.setHex(k);
         c.halo.material.opacity = 1;
-        c.tileMat.emissiveIntensity = 0.25;
+        c.tileMat.emissive.setHex(k);
+        c.tileMat.emissiveIntensity = 0.3;
       }
       if (sel) {
         c.fill.material.color.setHex(C.glowSel);
@@ -768,7 +794,7 @@ export function createBoardScene(config) {
         c.halo.material.opacity = 0.8;
       }
       if (can && !sel && !dest) pulseKeys.add(key);
-      if (victimKeys.has(key)) {
+      if (victimKeys.has(key) && !dest) {
         c.frame.material.color.setHex(C.carnelian);
         c.frame.material.opacity = 1;
         c.halo.material.color.setHex(C.carnelian);
@@ -776,6 +802,7 @@ export function createBoardScene(config) {
       }
     }
     doomed = victimIds;
+    syncGhost(lastGameFor(), ix, victimKeys);
     glowUnits = new Set();
     const live = new Set([...ix.tappable, ix.selected].filter(Boolean));
     for (const [id, p] of pieces) {
@@ -1003,6 +1030,189 @@ export function createBoardScene(config) {
     return moving;
   }
 
+  // --- ghost: where the selected move lands ---
+
+  function ghostFor(type, player) {
+    const k = `${type}:${player}`;
+    let g = ghosts.get(k);
+    if (!g) {
+      g = makePiece({ id: `ghost-${k}`, type, player });
+      const originals = g.userData.mats;
+      const clones = originals.map((m) => {
+        const c = m.clone();
+        c.transparent = true;
+        c.opacity = 0.5;
+        c.depthWrite = false;
+        return c;
+      });
+      g.traverse((o) => {
+        if (o.isMesh) {
+          o.material = clones[originals.indexOf(o.material)];
+          o.castShadow = false;
+        }
+      });
+      g.userData.mats = clones;
+      g.visible = false;
+      g.userData.unitId = undefined;
+      scene.add(g);
+      ghosts.set(k, g);
+    }
+    return g;
+  }
+
+  function syncGhost(game, ix, victimKeys) {
+    if (ghost) ghost.obj.visible = false;
+    ghost = null;
+    if (!ix.dest || !ix.selected || !['move', 'loversJump'].includes(ix.phase)) return;
+    const wantType = ix.chosen ? (ix.chosen.startsWith('commander') ? 'commander' : 'soldier') : null;
+    let mover = null;
+    for (const [id, p] of pieces) {
+      const u = R.getUnit(game, id);
+      if (u && u.player === game.current && p.place.key === ix.selected && (!wantType || u.type === wantType)) {
+        mover = u;
+        break;
+      }
+    }
+    const at = posOf(ix.dest);
+    if (!mover || !at) return;
+    const obj = ghostFor(mover.type, mover.player);
+    const color = destColor(ix.dest, victimKeys);
+    for (const m of obj.userData.mats) {
+      m.emissive.setHex(color);
+      m.emissiveIntensity = 0.45;
+    }
+    obj.position.set(at.x, layout.byKey.has(ix.dest) ? TILE_TOP : TABLE_Y + 0.06, at.z);
+    obj.visible = true;
+    ghost = { obj, base: obj.position.y };
+  }
+
+  // --- power effects (embellishments; placeholders) ---
+
+  const fxMat = (color, opacity = 1) => new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false,
+  });
+
+  function addEffect(obj, dur, update, delay = 0, now = performance.now()) {
+    effectGroup.add(obj);
+    effects.push({ obj, dur, update, start: now + delay });
+    update(0);
+  }
+
+  /** A ring spreading out over the table from (x, z). */
+  function ring(x, z, color, { delay = 0, dur = 700, now, size = 2.2, y = TILE_TOP + 0.03 } = {}) {
+    const m = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.44, 48).rotateX(-Math.PI / 2), fxMat(color));
+    m.position.set(x, y, z);
+    addEffect(m, dur, (t) => {
+      m.visible = t > 0;
+      m.scale.setScalar(lerp(0.6, size, easeOut(t)));
+      m.material.opacity = 1 - t;
+    }, delay, now);
+  }
+
+  /** A lightning strike: a bright column and a flash of light. */
+  function bolt(x, z, { delay = 0, now } = {}) {
+    const g = new THREE.Group();
+    g.position.set(x, 0, z);
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.16, 7, 12, 1, true).translate(0, 3.5 + TILE_TOP, 0), fxMat(0xfff4cc));
+    const flash = new THREE.PointLight(0xffe7a0, 0, 6, 1.6);
+    flash.position.y = 1.2;
+    g.add(beam, flash);
+    addEffect(g, 520, (t) => {
+      g.visible = t > 0;
+      const f = t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85;
+      beam.material.opacity = f * (0.6 + 0.4 * Math.sin(t * 60));
+      beam.scale.x = beam.scale.z = 0.6 + f;
+      flash.intensity = 25 * f;
+    }, delay, now);
+    ring(x, z, 0xfff0c0, { delay: delay + 60, dur: 520, now, size: 2 });
+  }
+
+  /** A warm lantern glow travelling along the middle lane. */
+  function sweep(color, { now } = {}) {
+    const lane = layout.cells.filter((c) => c.row === 1).sort((a, b) => a.x - b.x);
+    if (!lane.length) return;
+    const g = new THREE.Group();
+    const halo = makeHalo(CELL * 0.94, CELL * 0.94, 0.5);
+    halo.material.color.setHex(color);
+    halo.visible = true;
+    halo.position.y = TILE_TOP + 0.02;
+    const light = new THREE.PointLight(color, 0, 4, 1.5);
+    light.position.y = 0.9;
+    g.add(halo, light);
+    const x0 = lane[0].x;
+    const x1 = lane[lane.length - 1].x;
+    addEffect(g, 900, (t) => {
+      g.position.set(lerp(x0, x1, easeInOut(t)), 0, lane[0].z);
+      const f = Math.sin(Math.PI * t);
+      halo.material.opacity = f;
+      light.intensity = 10 * f;
+    }, 0, now);
+  }
+
+  /** A heart rising from (x, z). */
+  function heartRise(x, z, { now } = {}) {
+    const tex = TX.heartGlyph();
+    const m = tex
+      ? new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, fog: false, toneMapped: false }))
+      : new THREE.Mesh(new THREE.SphereGeometry(0.1), fxMat(C.lovers));
+    m.renderOrder = 12;
+    addEffect(m, 900, (t) => {
+      m.position.set(x, TILE_TOP + 0.4 + 1.1 * easeOut(t), z);
+      m.scale.setScalar(0.35 + 0.25 * Math.sin(Math.PI * Math.min(1, t * 1.5)));
+      m.material.opacity = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+    }, 0, now);
+  }
+
+  /** Effects for what the last action did (events from the controller). */
+  function powerEffects(prev, game, events, now) {
+    const played = events.find((e) => e.type === 'played');
+    const jumped = events.some((e) => e.type === 'jumped');
+    const prevPlaces = unitPlacements(prev, layout);
+    const nextPlaces = unitPlacements(game, layout);
+    const movedBy = (player) => game.units
+      .filter((u) => u.player === player && prevPlaces.get(u.id)?.key !== nextPlaces.get(u.id)?.key)
+      .map((u) => ({ from: prevPlaces.get(u.id), to: nextPlaces.get(u.id) }));
+    const middle = layout.cells.filter((c) => c.row === 1);
+
+    if (played?.power === R.POWERS.TOWER) {
+      layout.cells.filter((c) => c.tower).forEach((c, i) => bolt(c.x, c.z, { delay: i * 90, now }));
+    } else if (played?.power === R.POWERS.HERMIT) {
+      sweep(C.hermit, { now });
+    } else if (played?.power === R.POWERS.DEVIL) {
+      for (const c of middle) ring(c.x, c.z, C.carnelian, { delay: Math.abs(c.x) * 40, now, size: 1.8 });
+    } else if (played?.power === R.POWERS.LOVERS) {
+      for (const m of movedBy(played.player)) if (m.to?.where === 'cell') heartRise(m.to.x, m.to.z, { now });
+    }
+    // The Hanged Man: rings where the unit falls from and lands, on the backward move itself.
+    if (prev.hanged && prev.drawn !== null) {
+      for (const m of movedBy(prev.current)) {
+        if (m.from) ring(m.from.x, m.from.z, C.hanged, { now, y: m.from.y + 0.03 });
+        if (m.to) ring(m.to.x, m.to.z, C.hanged, { now, delay: 220, y: m.to.y + 0.03 });
+      }
+    }
+    if (jumped) {
+      const player = events.find((e) => e.type === 'jumped').player;
+      for (const m of movedBy(player)) if (m.to?.where === 'cell') heartRise(m.to.x, m.to.z, { now });
+    }
+  }
+
+  function stepEffects(now) {
+    for (let i = effects.length - 1; i >= 0; i -= 1) {
+      const e = effects[i];
+      const t = clamp01((now - e.start) / e.dur);
+      e.update(now < e.start ? 0 : t);
+      if (now >= e.start && t >= 1) {
+        effectGroup.remove(e.obj);
+        e.obj.traverse?.((o) => {
+          o.geometry?.dispose?.();
+          o.material?.dispose?.();
+        });
+        effects.splice(i, 1);
+      }
+    }
+    return effects.length > 0;
+  }
+
   // --- public ---
 
   function sync(model, ix, { animate = false, now = performance.now() } = {}) {
@@ -1010,7 +1220,11 @@ export function createBoardScene(config) {
     const anim = animate && lastGame !== null;
     syncing = game;
     currentPlayer = game.current;
-    syncUnits(game, anim, now);
+    const fresh = anim && game !== lastGame;
+    if (fresh) powerEffects(lastGame, game, model.ui.events ?? [], now);
+    const played = fresh ? (model.ui.events ?? []).find((e) => e.type === 'played')?.power : null;
+    const HIT = { [R.POWERS.TOWER]: 260, [R.POWERS.DEVIL]: 220, [R.POWERS.HERMIT]: 380 };
+    syncUnits(game, anim, now, HIT[played] ?? 0);
     syncHighlights(ix);
     syncLines(ix);
     syncCards(game, ix, model.ui.viewer, anim, now);
@@ -1027,6 +1241,11 @@ export function createBoardScene(config) {
     for (const p of pieces.values()) if (stepUnit(p, now)) moving = true;
     if (stepCards(now)) moving = true;
     if (stepDraft(now)) moving = true;
+    if (stepEffects(now)) moving = true;
+    if (ghost) {
+      ghost.obj.position.y = ghost.base + 0.05 + 0.05 * Math.sin((now / 700) * Math.PI * 2);
+      moving = true;
+    }
     // Things you can act on breathe with a glow.
     const pulse = 0.5 + 0.5 * Math.sin((now / 1400) * Math.PI * 2);
     for (const key of pulseKeys) {
@@ -1134,7 +1353,10 @@ export function createBoardScene(config) {
     screenOf,
     unitWorld,
     dispose,
-    parts: { sides, draftCards },
+    parts: {
+      sides, draftCards, surfaces, effects,
+      get ghost() { return ghost?.obj ?? null; },
+    },
     get azimuth() { return cam.azimuth; },
     get spinning() { return cam.spin !== null; },
     get distance() { return cam.fit * cam.zoom; },
