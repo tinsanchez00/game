@@ -430,7 +430,7 @@ test('a side that cannot be used is shown faded and ignores taps', () => {
   const board = sceneFor(model);
   board.tick(TIMING.rise + 1);
   const [a, b] = board.parts.draftCards;
-  assert.ok(a.material.color.r < b.material.color.r, 'the unusable side is darkened');
+  assert.ok(a.material.opacity < b.material.opacity, 'the unusable side is slightly transparent');
   assert.ok(!allowed({ type: 'keep', index: 0 }, model, interactions(model)));
 });
 
@@ -455,7 +455,7 @@ test('without stars, the upside-down card still rises, faded, and ignores taps',
   board.tick(TIMING.rise + 1);
   const [a, b] = board.parts.draftCards;
   assert.ok(a.visible && b.visible);
-  assert.ok(b.material.color.r < a.material.color.r, 'the unusable side is darkened');
+  assert.ok(b.material.opacity < a.material.opacity, 'the unusable side is slightly transparent');
   assert.ok(!allowed({ type: 'keep', index: 1 }, model, interactions(model)));
   assert.ok(allowed({ type: 'keep', index: 0 }, model, interactions(model)));
 });

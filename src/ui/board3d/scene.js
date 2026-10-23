@@ -979,8 +979,6 @@ export function createBoardScene(config) {
       ids.forEach((id, i) => {
         const mat = draftCards[i].material;
         setMap(mat, TX.powerFace(id), C.shell);
-        // A side that can't be used is shown darkened (placeholder look).
-        if (side && (i === 0 ? !ix.canUpright : !ix.canUpsideDown)) mat.color.multiplyScalar(0.45);
       });
       draftCards.forEach((m, i) => { m.visible = i < ids.length; });
       draft.turned = side ? [false, true] : [false, false];
@@ -1010,7 +1008,8 @@ export function createBoardScene(config) {
       m.scale.setScalar(scale);
       m.position.set((i - (visible.length - 1) / 2) * (DRAFT.w + DRAFT.gap) * scale, lerp(-visH, lift, e), DRAFT.z);
       m.rotation.z = (1 - e) * (i === 0 ? 0.25 : -0.25) + (draft.turned[i] ? Math.PI : 0);
-      m.material.opacity = e;
+      // A side that can't be used is slightly transparent.
+      m.material.opacity = e * (draft.off[i] ? 0.7 : 1);
     });
     dim.material.opacity = 0.55 * e;
     return t < 1;
