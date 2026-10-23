@@ -24,12 +24,21 @@ export function allowed(action, model, ix) {
   if (!action) return false;
   if (action.type === 'draw') return ix.phase === 'draw' && action.player === model.game.current;
   if (action.type === 'use-power') return ix.canUsePower && action.player === model.game.current;
-  if (action.type === 'keep') return ix.phase === 'draft';
+  if (action.type === 'keep') {
+    if (ix.phase === 'side') return action.index === 0 ? ix.canUpright : ix.canUpsideDown;
+    return ix.phase === 'draft';
+  }
   if (action.type === 'tap') {
     const live = new Set([...ix.tappable, ...(ix.targets ?? []), ix.dest].filter(Boolean));
     return live.has(action.key);
   }
   return false;
+}
+
+/** A picked rising card means a side of the held power while one is being picked. */
+export function toScreenAction(action, ix) {
+  if (action.type === 'keep' && ix.phase === 'side') return { type: action.index === 0 ? 'side-upright' : 'side-upside' };
+  return action;
 }
 
 /**
@@ -128,7 +137,7 @@ export function createBoardView({ onAction }) {
     const action = board.pick(x, y);
     if (!allowed(action, model, ix)) return;
     if (action.type === 'draw' || action.type === 'use-power') onAction({ type: action.type });
-    else onAction(action);
+    else onAction(toScreenAction(action, ix));
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) wake();

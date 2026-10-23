@@ -422,15 +422,20 @@ export function lockGlyph() {
 
 /**
  * A text texture that can be changed: { tex, set(text) } or null.
- * `style`: 'label' (muted body text) or 'caps' (small gold capitals).
+ * `style`: 'label' (muted body text), 'caps' (small gold capitals) or
+ * 'badge' (a star and a number on a lapis pill; placeholder look).
  */
-export function textLabel(style = 'label', w = 512, h = 96) {
+export function textLabel(style = 'label', w = style === 'badge' ? 208 : 512, h = 96) {
   if (!canvasAvailable()) return null;
   let text = '';
   // Bright text with a dark outline, readable on wood, felt or cards.
   const draw = (ctx, cw, ch) => {
     ctx.clearRect(0, 0, cw, ch);
     if (!text) return;
+    if (style === 'badge') {
+      drawStarBadge(ctx, cw, ch, text);
+      return;
+    }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const caps = style === 'caps';
@@ -461,6 +466,30 @@ export function textLabel(style = 'label', w = 512, h = 96) {
       entry.tex.dispose();
     },
   };
+}
+
+const STAR = 'M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z';
+
+function drawStarBadge(ctx, cw, ch, text) {
+  const pad = 6;
+  ctx.fillStyle = COL.lapisDeep;
+  ctx.strokeStyle = COL.gold;
+  ctx.lineWidth = 6;
+  roundRect(ctx, pad, pad, cw - 2 * pad, ch - 2 * pad, (ch - 2 * pad) / 2);
+  ctx.fill();
+  ctx.stroke();
+  const s = (ch - 2 * pad) * 0.62;
+  ctx.save();
+  ctx.translate(cw * 0.3 - s / 2, ch / 2 - s / 2);
+  ctx.scale(s / 24, s / 24);
+  ctx.fillStyle = COL.gold;
+  if (typeof Path2D !== 'undefined') ctx.fill(new Path2D(STAR));
+  ctx.restore();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = font(BODY, 58, 700);
+  ctx.fillStyle = COL.shellBright;
+  ctx.fillText(text, cw * 0.64, ch / 2 + 2);
 }
 
 // --- glow halos ------------------------------------------------------------------------

@@ -474,6 +474,15 @@ function buildSide(L, player, yawers) {
     group.add(label.yaw);
     labels[name] = label;
   }
+  // Stars: a badge on a corner of the power card (see placeBadge).
+  labels.stars = makeLabel('badge');
+  group.add(labels.stars.yaw);
+  const owner = Math.sign(L.labels.power.z - L.power.z) || 1; // +1: the owner sits on +z
+  /** Puts the badge on the card's top-right corner as seen from `dir` (+1: from +z, -1: from -z). */
+  const placeBadge = (dir = owner) => {
+    labels.stars.yaw.position.set(L.power.x + dir * CARD.w * 0.5, TABLE_Y + 0.03, L.power.z - dir * CARD.d * 0.5);
+  };
+  placeBadge();
 
   const minis = [];
   const mini = (i) => {
@@ -489,6 +498,7 @@ function buildSide(L, player, yawers) {
 
   return {
     group, deck, stack, top, deckSlot, deckHalo, drawn, power, drawnSlot, powerSlot, powerHalo, labels, minis, mini, L,
+    owner, placeBadge,
     shownDrawn: null, drawAnim: null,
   };
 }
@@ -570,7 +580,7 @@ export function createBoardScene(config) {
     hud.add(m);
     return m;
   });
-  const draft = { shown: false, start: 0 };
+  const draft = { shown: false, start: 0, kind: null, turned: [false, false], off: [false, false] };
 
   const pieces = new Map(); // id -> { obj, place, anim, lift }
   let viewer = null;
@@ -896,7 +906,14 @@ export function createBoardScene(config) {
       if (animate && card !== null && s.shownDrawn === null) s.drawAnim = { start: now, from: new THREE.Vector3(L.deck.x, TABLE_Y + h + 0.01, L.deck.z) };
       if (card === null) s.drawAnim = null;
       s.shownDrawn = card;
-      s.labels.drawn.set(card !== null && game.campsite ? TEXT.campCard : TEXT.drawn);
+      s.labels.drawn.set(card !== null && game.campsite ? TEXT.campCard
+        : card !== null && game.upsideDown?.stage === 'step' ? TEXT.stepCard : TEXT.drawn);
+      // Stars (shown while upside-down powers are on).
+      const starsOn = game.config.powers && game.config.rules.upsideDown;
+      s.labels.stars.yaw.visible = starsOn;
+      s.labels.stars.set(starsOn ? String(game.stars?.[p] ?? 0) : '');
+      // Top-right as seen by whoever looks at this card: its owner at a shared table, else the viewer.
+      s.placeBadge(cam.table ? s.owner : viewerNow === 1 ? -1 : 1);
 
       // Power: face up for both players.
       const held = game.held[p];
@@ -953,15 +970,21 @@ export function createBoardScene(config) {
   // --- draft ---
 
   function syncDraft(game, ix, animate, now) {
-    const show = ix.phase === 'draft';
+    // The draft, or picking a side for the held power: upright, then upside down.
+    const side = ix.phase === 'side';
+    const show = ix.phase === 'draft' || side;
     if (show) {
-      R.draftOptions(game).forEach((id, i) => {
+      const held = game.held[game.current];
+      const ids = side ? [held, held] : R.draftOptions(game);
+      ids.forEach((id, i) => {
         const mat = draftCards[i].material;
         setMap(mat, TX.powerFace(id), C.shell);
       });
-      const count = R.draftOptions(game).length;
-      draftCards.forEach((m, i) => { m.visible = i < count; });
-      if (!draft.shown) draft.start = animate ? now : -Infinity;
+      draftCards.forEach((m, i) => { m.visible = i < ids.length; });
+      draft.turned = side ? [false, true] : [false, false];
+      draft.off = side ? [!ix.canUpright, !ix.canUpsideDown] : [false, false];
+      if (!draft.shown || draft.kind !== ix.phase) draft.start = animate ? now : -Infinity;
+      draft.kind = ix.phase;
     } else {
       for (const m of draftCards) m.visible = false;
     }
@@ -977,12 +1000,15 @@ export function createBoardScene(config) {
     const visW = visH * cam.aspect;
     const visible = draftCards.filter((m) => m.visible);
     const span = visible.length * DRAFT.w + (visible.length - 1) * DRAFT.gap;
-    const scale = Math.min(1, (visW * 0.9) / span, (visH * 0.8) / DRAFT.h);
+    // Picking a side leaves room below the cards for its buttons.
+    const side = draft.kind === 'side';
+    const scale = Math.min(1, (visW * 0.9) / span, (visH * (side ? 0.56 : 0.8)) / DRAFT.h);
+    const lift = side ? visH * 0.13 : 0;
     visible.forEach((m, i) => {
       m.scale.setScalar(scale);
-      m.position.set((i - (visible.length - 1) / 2) * (DRAFT.w + DRAFT.gap) * scale, lerp(-visH, 0, e), DRAFT.z);
-      m.rotation.z = (1 - e) * (i === 0 ? 0.25 : -0.25);
-      m.material.opacity = e;
+      m.position.set((i - (visible.length - 1) / 2) * (DRAFT.w + DRAFT.gap) * scale, lerp(-visH, lift, e), DRAFT.z);
+      m.rotation.z = (1 - e) * (i === 0 ? 0.25 : -0.25) + (draft.turned[i] ? Math.PI : 0);
+      m.material.opacity = e * (draft.off[i] ? 0.35 : 1);
     });
     dim.material.opacity = 0.55 * e;
     return t < 1;

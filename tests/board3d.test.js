@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as R from '../src/rules/index.js';
 import { initModel, interactions, unitKey, update } from '../src/ui/controller.js';
 import { boardLayout3d, CARD, DECK, STACK_OFFSET, TILE_TOP, TRAY_TOP, unitPlacements } from '../src/ui/board3d/layout3d.js';
-import { allowed } from '../src/ui/board3d/mount.js';
+import { allowed, toScreenAction } from '../src/ui/board3d/mount.js';
 import { createBoardScene, TIMING } from '../src/ui/board3d/scene.js';
 import { gameWith } from './helpers.js';
 import { view } from '../src/ui/view.js';
@@ -393,3 +393,52 @@ test('The Hermit: the move onto an ally shows where the ally will be pushed, and
 function pageOf(model) {
   return view(model);
 }
+
+test('picking a side: both sides of the held power rise, the second upside down; taps map to the sides', () => {
+  let model = initModel(gameWith({ 'p0-s1': 8 }, {
+    moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.TOWER, null],
+    stars: [1, 0],
+  }));
+  model = update(model, { type: 'draw' });
+  model = update(model, { type: 'use-power' });
+  assert.equal(interactions(model).phase, 'side');
+  const board = sceneFor(model);
+  board.tick(TIMING.rise + 1);
+  const [a, b] = board.parts.draftCards;
+  assert.ok(a.visible && b.visible);
+  assert.ok(Math.abs(b.rotation.z - a.rotation.z - Math.PI) < 1e-6, 'the second card is upside down');
+  const pb = board.screenOf(b);
+  const action = board.pick(pb.x, pb.y);
+  assert.deepEqual(action, { type: 'keep', index: 1 });
+  const ix = interactions(model);
+  assert.ok(allowed(action, model, ix));
+  assert.deepEqual(toScreenAction(action, ix), { type: 'side-upside' });
+  model = update(model, toScreenAction(action, ix));
+  assert.deepEqual(model.game.stars, [0, 0]);
+  board.sync(model, interactions(model), { animate: true, now: 1000 });
+  assert.ok(!a.visible && !b.visible);
+});
+
+test('a side that cannot be used is shown faded and ignores taps', () => {
+  let model = initModel(gameWith({ 'p0-s1': 8 }, {
+    moveDecks: [{ draw: [R.JOKER, 1], discard: [] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.LOVERS, null],
+    stars: [1, 0],
+  }));
+  model = update(update(model, { type: 'draw' }), { type: 'use-power' });
+  const board = sceneFor(model);
+  board.tick(TIMING.rise + 1);
+  const [a, b] = board.parts.draftCards;
+  assert.ok(a.material.opacity < b.material.opacity);
+  assert.ok(!allowed({ type: 'keep', index: 0 }, model, interactions(model)));
+});
+
+test('each side shows its stars on a badge by the power card', () => {
+  const model = initModel(gameWith({}, { stars: [3, 1] }));
+  const board = sceneFor(model);
+  const [s0, s1] = board.parts.sides;
+  assert.ok(s0.labels.stars.yaw.visible && s1.labels.stars.yaw.visible);
+  const off = sceneFor(initModel(gameWith({}, { config: { rules: { upsideDown: false } } })));
+  assert.ok(!off.parts.sides[0].labels.stars.yaw.visible);
+});

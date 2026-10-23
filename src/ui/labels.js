@@ -52,6 +52,16 @@ export const TEXT = {
   unleash: 'Unleash',
   jump: 'Jump',
   stay: 'Stay',
+  // Picking a side for the held power (placeholders).
+  side: {
+    upright: 'Upright',
+    uprightNote: 'Free',
+    upsideDown: 'Upside down',
+    upsideNote: (cost) => `${plural(cost, 'star')} · step 1 cell, then your card`,
+    back: 'Back',
+  },
+  stepCard: 'Step',
+  stars: (team, n) => `${team}: ${plural(n, 'star')}`,
 
   status: {
     handoff: (team) => `${team}'s turn — pass the phone`,
@@ -65,8 +75,10 @@ export const TEXT = {
       campsite: `Campsite · move that unit ${n} again`,
       lovers: `The Lovers · move a unit ${n} forward`,
       hermit: `The Hermit · move a unit ${n} onto an ally`,
+      upsideDown: `Upside down · step a unit ${n} cell forward`,
     })[step] ?? `Move a unit ${n} forward`,
     pickMove: 'Tap the glowing cell to move there',
+    side: (power) => `Use ${power} upright or upside down`,
     stuck: (n, step) => ({
       back: `No valid backward move with ${n}`,
       forward: `No valid forward move with ${n}`,
@@ -96,6 +108,7 @@ export const TEXT = {
     noMove: (team) => `${team} couldn't move`,
     drafted: (team, power) => `${team} drafted ${power}`,
     played: (team, power) => `${team} played ${power}`,
+    flipped: (team, power) => `${team} played ${power} upside down`,
     jumped: (team) => `${team} jumped to an ally`,
     extraTurn: (team) => `${team} takes an extra turn`,
   },

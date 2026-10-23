@@ -109,6 +109,15 @@ function discardRow(g, player) {
   </div>`;
 }
 
+const STAR_PATH = 'M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z';
+
+/** A player's star count, on their power slot (when upside-down powers are on). */
+function starBadge(g, player) {
+  if (!g.config.powers || !g.config.rules.upsideDown) return '';
+  const n = g.stars?.[player] ?? 0;
+  return `<span class="star-badge" role="img" aria-label="${esc(TEXT.stars(team(player), n))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${STAR_PATH}"></path></svg>${n}</span>`;
+}
+
 function opponentPanel(g, player) {
   const c = counts(g, player);
   // Every card is public: the other player's power is face up too.
@@ -122,7 +131,7 @@ function opponentPanel(g, player) {
     </div>
     <div class="cards small">
       <div class="card-slot"><div class="card back deck"></div><span class="lbl">${esc(TEXT.left(c.deck))}</span></div>
-      <div class="card-slot">${power}<span class="lbl">${esc(TEXT.power)}</span></div>
+      <div class="card-slot">${power}${starBadge(g, player)}<span class="lbl">${esc(TEXT.power)}</span></div>
     </div>
     ${discardRow(g, player)}
   </section>`;
@@ -185,8 +194,8 @@ function playerPanel(m, ix, victims, victimKeys) {
     ${discardRow(g, p)}
     <div class="cards big">
       <div class="card-slot">${deck}<span class="lbl">${esc(TEXT.left(c.deck))}</span></div>
-      <div class="card-slot">${drawnCard(g)}<span class="lbl">${esc(g.campsite ? TEXT.campCard : TEXT.drawn)}</span></div>
-      <div class="card-slot">${power}<span class="lbl">${esc(TEXT.power)}</span></div>
+      <div class="card-slot">${drawnCard(g)}<span class="lbl">${esc(g.campsite ? TEXT.campCard : g.upsideDown?.stage === 'step' ? TEXT.stepCard : TEXT.drawn)}</span></div>
+      <div class="card-slot">${power}${starBadge(g, p)}<span class="lbl">${esc(TEXT.power)}</span></div>
     </div>
     ${actions(m, ix)}
   </section>`;
@@ -215,6 +224,7 @@ function eventsText(m) {
     if (e.type === 'noMove') return TEXT.event.noMove(t);
     if (e.type === 'drafted') return TEXT.event.drafted(t, powerName(e.power));
     if (e.type === 'played') return TEXT.event.played(t, powerName(e.power));
+    if (e.type === 'flipped') return TEXT.event.flipped(t, powerName(e.power));
     if (e.type === 'jumped') return TEXT.event.jumped(t);
     if (e.type === 'extraTurn') return TEXT.event.extraTurn(t);
     return '';
@@ -231,6 +241,7 @@ function stepOf(g) {
   if (g.campsite) return 'campsite';
   if (g.lovers) return 'lovers';
   if (g.hermit) return 'hermit';
+  if (g.upsideDown?.stage === 'step') return 'upsideDown';
   return g.hanged?.stage ?? null;
 }
 
@@ -278,6 +289,13 @@ function turnControls(m, ix, { cards3d = false } = {}) {
       const cards = R.draftOptions(g).map((id, i) =>
         `<button type="button" class="card face power choice" data-action="keep" data-index="${i}" aria-label="Keep ${esc(powerName(id))}">${powerCard(id)}</button>`);
       controls = `<div class="draft">${cards.join('')}</div>`;
+      break;
+    }
+    case 'side': {
+      status = S.side(powerName(ix.power));
+      const T = TEXT.side;
+      const choice = (action, title, note, disabled) => `<button type="button" class="btn side-choice" data-action="${action}"${disabled ? ' disabled' : ''}><span class="side-title">${esc(title)}</span><span class="side-note">${esc(note)}</span></button>`;
+      controls = `<div class="buttons side-pick">${choice('side-upright', T.upright, T.uprightNote, !ix.canUpright)}${choice('side-upside', T.upsideDown, T.upsideNote(ix.cost), !ix.canUpsideDown)}${btn('cancel', T.back)}</div>`;
       break;
     }
     case R.POWERS.LOVERS:

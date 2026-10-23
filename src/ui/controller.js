@@ -7,6 +7,7 @@
 //   pick,        current selection (see below) or null
 //   joker,       null | 'draft' — choice made after drawing a joker
 //   using,       true while picking targets for the held power
+//   side,        true while choosing upright or upside down for the held power
 //   confirmNew,  showing the "start a new game?" prompt
 //   menuOpen,    the in-game menu is open (3D layout)
 //   events,      what the last action did, for the status line
@@ -19,7 +20,7 @@ export function initModel(game = R.createGame()) {
 }
 
 function freshUi(viewer, events = []) {
-  return { viewer, pick: null, joker: null, using: false, confirmNew: false, menuOpen: false, events };
+  return { viewer, pick: null, joker: null, using: false, side: false, confirmNew: false, menuOpen: false, events };
 }
 
 /** Where a unit is: a board cell id, or `home:<player>` / `asc:<player>`. */
@@ -37,11 +38,12 @@ export function phaseOf(m) {
   if (g.winner !== null) return 'won';
   if (g.current !== m.ui.viewer) return 'handoff';
   if (g.lovers?.stage === 'jump') return 'loversJump';
+  if (m.ui.side && (R.canUsePower(g) || R.canUsePowerUpsideDown(g))) return 'side';
   if (m.ui.using && R.canUsePower(g)) return g.held[g.current];
   if (g.drawn === null) return 'draw';
   if (R.isNumberCard(g.drawn)) return R.currentMoves(g).length > 0 ? 'move' : 'stuck';
   if (R.mustPassJoker(g)) return 'jokerPass';
-  if (m.ui.joker === 'draft' || !R.canUsePower(g)) return 'draft';
+  if (m.ui.joker === 'draft' || (!R.canUsePower(g) && !R.canUsePowerUpsideDown(g))) return 'draft';
   return 'joker';
 }
 
@@ -143,7 +145,10 @@ function chosenJump(m) {
 /**
  * Everything the view needs to draw highlights and controls:
  * { phase, tappable, selected, dest, targets, victims, options, chosen, canConfirm,
- *   canUsePower, power, lines }
+ *   canUsePower, canUpright, canUpsideDown, cost, power, lines }
+ * canUsePower: the held power can be tapped (upright and/or upside down);
+ * canUpright / canUpsideDown: which sides can be used now; cost: the
+ * upside-down star cost.
  * lines: [{ from, to, on }] cell keys of the Lovers jumps on offer (on: the chosen one).
  */
 export function interactions(m) {
@@ -153,9 +158,14 @@ export function interactions(m) {
   const out = {
     phase, tappable: [], selected: null, dest: null, targets: [], victims: [],
     options: [], chosen: null, canConfirm: false, lines: [], push: null,
-    canUsePower: !m.ui.using && R.canUsePower(g) && phase !== 'won' && phase !== 'handoff',
+    canUpright: R.canUsePower(g),
+    canUpsideDown: R.canUsePowerUpsideDown(g),
+    canUsePower: false,
     power: g.held[g.current],
+    cost: R.upsideDownCost(g.held[g.current]),
   };
+  out.canUsePower = !m.ui.using && !m.ui.side && (out.canUpright || out.canUpsideDown)
+    && phase !== 'won' && phase !== 'handoff';
 
   if (phase === 'move') {
     const sources = moveSources(g);
@@ -239,7 +249,7 @@ function describe(before, after, actor) {
     events.push({ type: 'drafted', player: actor, power: after.held[actor] });
   }
   // The same player starts a new turn (Hanged Man, or the tower extra-turn rule).
-  const turnStart = (s) => s.drawn === null && !s.hanged && !s.campsite && !s.lovers && !s.hermit;
+  const turnStart = (s) => s.drawn === null && !s.hanged && !s.campsite && !s.lovers && !s.hermit && !s.upsideDown;
   if (after.winner === null && after.current === actor && turnStart(after) && !turnStart(before)) {
     events.push({ type: 'extraTurn', player: actor });
   }
@@ -277,7 +287,8 @@ export function update(m, action) {
 
     case 'continue': {
       // Only a turn's own card loses the turn; a Hanged Man, campsite or Lovers card just doesn't move.
-      const event = { type: g.hanged || g.campsite || g.lovers || g.hermit ? 'noMove' : 'turnLost', player: g.current };
+      const midCard = g.hanged || g.campsite || g.lovers || g.hermit || g.upsideDown?.stage === 'step';
+      const event = { type: midCard ? 'noMove' : 'turnLost', player: g.current };
       if (phase === 'jokerPass') return commit(m, R.passJoker(g), [event]);
       if (phase !== 'stuck') return m;
       return commit(m, R.playDrawnNumber(g, null), [event]);
@@ -286,11 +297,19 @@ export function update(m, action) {
     case 'joker-draft':
       return phase === 'joker' ? ui({ joker: 'draft', pick: null }) : m;
 
-    case 'use-power': {
+    case 'use-power':
       if (!ix.canUsePower) return m;
+      // A power that can go upside down: pick a side first.
+      if (ix.canUpsideDown) return ui({ side: true, pick: null });
+      return useUpright(m);
+
+    case 'side-upright':
+      return phase === 'side' && ix.canUpright ? useUpright({ ...m, ui: { ...m.ui, side: false } }) : m;
+
+    case 'side-upside': {
+      if (phase !== 'side' || !ix.canUpsideDown) return m;
       const power = g.held[g.current];
-      if (targetedUses(g).length > 0) return ui({ using: true, pick: null, joker: null });
-      return commit(m, R.usePower(g, {}), [{ type: 'played', player: g.current, power }]);
+      return commit(m, R.usePowerUpsideDown(g), [{ type: 'flipped', player: g.current, power }]);
     }
 
     case 'stay':
@@ -301,6 +320,7 @@ export function update(m, action) {
       return commit(m, R.playDraft(g, action.index));
 
     case 'cancel':
+      if (phase === 'side') return ui({ side: false, pick: null });
       if (phase === R.POWERS.LOVERS || phase === R.POWERS.DEVIL) {
         return m.ui.pick ? ui({ pick: null }) : ui({ using: false, pick: null });
       }
@@ -338,6 +358,14 @@ export function update(m, action) {
     default:
       return m;
   }
+}
+
+/** Uses the held power upright: pick its targets, or play it at once. */
+function useUpright(m) {
+  const g = m.game;
+  const power = g.held[g.current];
+  if (targetedUses(g).length > 0) return { ...m, ui: { ...m.ui, using: true, side: false, pick: null, joker: null } };
+  return commit(m, R.usePower(g, {}), [{ type: 'played', player: g.current, power }]);
 }
 
 function tap(m, key, phase, ix) {
