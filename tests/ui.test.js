@@ -374,7 +374,7 @@ test('with stars, tapping the power offers both sides; Back closes it', () => {
   assert.equal(ix.cost, 1);
   assert.ok(!ix.canUsePower, 'the power card is not tappable again while choosing');
   assert.match(view(m), /data-action="side-upright"/);
-  assert.match(view(m, { board: '3d' }), /data-action="side-upside"/);
+  assert.match(view(m, { board: '3d' }), /class="buttons side-back"/, 'in 3D the cards are tapped; Back stays a button');
   m = update(m, { type: 'cancel' });
   assert.equal(interactions(m).phase, 'move');
   assert.equal(m.game.held[0], R.POWERS.TOWER);

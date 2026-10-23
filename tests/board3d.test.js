@@ -459,3 +459,24 @@ test('without stars, the upside-down card still rises, faded, and ignores taps',
   assert.ok(!allowed({ type: 'keep', index: 1 }, model, interactions(model)));
   assert.ok(allowed({ type: 'keep', index: 0 }, model, interactions(model)));
 });
+
+test('picking a side: a heading, a caption under each card and the cost on the upside-down card; captions can be tapped', () => {
+  let model = initModel(gameWith({ 'p0-s1': 8 }, {
+    moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.TOWER, null],
+    stars: [1, 0],
+  }));
+  model = update(update(model, { type: 'draw' }), { type: 'use-power' });
+  const board = sceneFor(model);
+  board.tick(TIMING.rise + 1);
+  const [a, b] = board.parts.draftCards;
+  const { captions, heading, cost } = board.parts.sideParts;
+  assert.ok(captions.every((c) => c.visible) && heading.visible && cost.visible);
+  assert.ok(board.screenOf(captions[0]).y < board.screenOf(a).y, 'caption under its card');
+  assert.ok(board.screenOf(heading).y > board.screenOf(a).y, 'heading above the cards');
+  assert.ok(board.screenOf(cost).x > board.screenOf(b).x && board.screenOf(cost).y > board.screenOf(b).y, 'cost on the top-right corner');
+  assert.deepEqual(pickAt(board, captions[1]), { type: 'keep', index: 1 });
+  model = update(model, { type: 'cancel' });
+  board.sync(model, interactions(model), { animate: true, now: 2000 });
+  assert.ok(!heading.visible && !cost.visible && captions.every((c) => !c.visible));
+});

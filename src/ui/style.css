@@ -482,6 +482,4 @@ button:focus-visible { outline: 2px solid var(--shell-bright); outline-offset: 2
 .side-choice { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; }
 .side-choice .side-title { font-weight: 700; }
 .side-choice .side-note { font-size: 12px; opacity: 0.85; }
-.hud-actions .side-pick { flex-wrap: nowrap; align-items: stretch; }
-.hud-actions .side-choice { min-height: 44px; padding: 4px 12px; }
-.hud-actions .side-choice .side-note { font-size: 11px; }
+.hud-actions .side-back { position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); }

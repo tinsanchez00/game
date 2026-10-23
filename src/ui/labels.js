@@ -19,6 +19,15 @@ export const OPTION_LABELS = {
   'commander+escort': 'Commander + escort',
 };
 
+// One-line summaries of the upright effects, for the side picker (placeholders).
+const UPRIGHT_SHORT = {
+  [POWERS.HANGED_MAN]: 'move back, then an extra turn',
+  [POWERS.LOVERS]: 'move, then jump to an ally',
+  [POWERS.DEVIL]: 'pull the middle lane in',
+  [POWERS.TOWER]: 'destroy every tower',
+  [POWERS.HERMIT]: 'move onto an ally, push it on',
+};
+
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export const TEXT = {
@@ -54,8 +63,9 @@ export const TEXT = {
   stay: 'Stay',
   // Picking a side for the held power (placeholders).
   side: {
+    heading: (power) => `Use ${power}`,
     upright: 'Upright',
-    uprightNote: 'Free',
+    uprightNote: (power) => `Free · ${UPRIGHT_SHORT[power] ?? ''}`.replace(/ · $/, ''),
     upsideDown: 'Upside down',
     upsideNote: (cost) => `${plural(cost, 'star')} · step 1 cell, then your card`,
     back: 'Back',

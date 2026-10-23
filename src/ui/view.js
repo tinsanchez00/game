@@ -295,7 +295,10 @@ function turnControls(m, ix, { cards3d = false } = {}) {
       status = S.side(powerName(ix.power));
       const T = TEXT.side;
       const choice = (action, title, note, disabled) => `<button type="button" class="btn side-choice" data-action="${action}"${disabled ? ' disabled' : ''}><span class="side-title">${esc(title)}</span><span class="side-note">${esc(note)}</span></button>`;
-      controls = `<div class="buttons side-pick">${choice('side-upright', T.upright, T.uprightNote, !ix.canUpright)}${choice('side-upside', T.upsideDown, T.upsideNote(ix.cost), !ix.canUpsideDown)}${btn('cancel', T.back)}</div>`;
+      // In 3D the cards and their captions are tapped; only Back stays a button.
+      controls = cards3d
+        ? `<div class="buttons side-back">${btn('cancel', T.back)}</div>`
+        : `<div class="buttons side-pick">${choice('side-upright', T.upright, T.uprightNote(ix.power), !ix.canUpright)}${choice('side-upside', T.upsideDown, T.upsideNote(ix.cost), !ix.canUpsideDown)}${btn('cancel', T.back)}</div>`;
       break;
     }
     case R.POWERS.LOVERS:

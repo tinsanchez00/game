@@ -8,7 +8,7 @@
 
 import * as THREE from '../../../vendor/three/three.module.js';
 import * as R from '../../rules/index.js';
-import { TEXT } from '../labels.js';
+import { POWER_INFO, TEXT } from '../labels.js';
 import {
   BOARD_PAD, BOARD_RIM, boardLayout3d, CARD, CELL, DECK, discardX, LABEL, MINI, TABLE_Y, TILE_TOP, unitPlacements,
 } from './layout3d.js';
@@ -581,6 +581,19 @@ export function createBoardScene(config) {
     return m;
   });
   const draft = { shown: false, start: 0, kind: null, turned: [false, false], off: [false, false] };
+  // Picking a side: a heading, a caption under each card, the cost on the upside-down one.
+  const hudPlane = (keep) => {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, fog: false, toneMapped: false }),
+    );
+    m.renderOrder = 22;
+    m.visible = false;
+    if (keep !== undefined) m.userData.keep = keep;
+    hud.add(m);
+    return m;
+  };
+  const sideParts = { captions: [hudPlane(0), hudPlane(1)], heading: hudPlane(), cost: hudPlane() };
 
   const pieces = new Map(); // id -> { obj, place, anim, lift }
   let viewer = null;
@@ -983,11 +996,20 @@ export function createBoardScene(config) {
       draftCards.forEach((m, i) => { m.visible = i < ids.length; });
       draft.turned = side ? [false, true] : [false, false];
       draft.off = side ? [!ix.canUpright, !ix.canUpsideDown] : [false, false];
+      if (side) {
+        const T = TEXT.side;
+        const name = POWER_INFO[held]?.name ?? held;
+        setMap(sideParts.captions[0].material, TX.sideCaption(T.upright, T.uprightNote(held)), C.shell);
+        setMap(sideParts.captions[1].material, TX.sideCaption(T.upsideDown, T.upsideNote(ix.cost)), C.shell);
+        setMap(sideParts.heading.material, TX.headingText(T.heading(name)), C.shell);
+        setMap(sideParts.cost.material, TX.starCost(ix.cost), C.shell);
+      }
       if (!draft.shown || draft.kind !== ix.phase) draft.start = animate ? now : -Infinity;
       draft.kind = ix.phase;
     } else {
       for (const m of draftCards) m.visible = false;
     }
+    for (const m of [...sideParts.captions, sideParts.heading, sideParts.cost]) m.visible = show && side;
     dim.visible = show;
     draft.shown = show;
   }
@@ -1002,15 +1024,38 @@ export function createBoardScene(config) {
     const span = visible.length * DRAFT.w + (visible.length - 1) * DRAFT.gap;
     // Picking a side leaves room below the cards for its buttons.
     const side = draft.kind === 'side';
-    const scale = Math.min(1, (visW * 0.9) / span, (visH * (side ? 0.56 : 0.8)) / DRAFT.h);
-    const lift = side ? visH * 0.13 : 0;
+    const scale = Math.min(1, (visW * 0.9) / span, (visH * (side ? 0.46 : 0.8)) / DRAFT.h);
+    const lift = side ? visH * 0.11 : 0;
     visible.forEach((m, i) => {
       m.scale.setScalar(scale);
       m.position.set((i - (visible.length - 1) / 2) * (DRAFT.w + DRAFT.gap) * scale, lerp(-visH, lift, e), DRAFT.z);
       m.rotation.z = (1 - e) * (i === 0 ? 0.25 : -0.25) + (draft.turned[i] ? Math.PI : 0);
       // A side that can't be used is slightly transparent.
       m.material.opacity = e * (draft.off[i] ? 0.7 : 1);
+      if (!side) return;
+      // Caption under the card, cost badge on the upside-down card's top-right corner.
+      const w = DRAFT.w * scale;
+      const h = DRAFT.h * scale;
+      const cap = sideParts.captions[i];
+      const capW = w * 1.25;
+      const capH = capW * (TX.CAPTION.h / TX.CAPTION.w);
+      cap.scale.set(capW, capH, 1);
+      cap.position.set(m.position.x, m.position.y - h / 2 - capH * 0.52, DRAFT.z);
+      cap.material.opacity = m.material.opacity;
+      if (i === 1) {
+        const bh = h * 0.13;
+        sideParts.cost.scale.set(bh * (208 / 96), bh, 1);
+        sideParts.cost.position.set(m.position.x + w / 2 - bh * 0.4, m.position.y + h / 2 - bh * 0.1, DRAFT.z);
+        sideParts.cost.material.opacity = m.material.opacity;
+      }
     });
+    if (side && visible.length) {
+      const top = visible[0].position.y + (DRAFT.h * scale) / 2;
+      const hh = visH * 0.075;
+      sideParts.heading.scale.set(hh * (1024 / 96), hh, 1);
+      sideParts.heading.position.set(0, top + hh * 0.9, DRAFT.z);
+      sideParts.heading.material.opacity = e;
+    }
     dim.material.opacity = 0.55 * e;
     return t < 1;
   }
@@ -1378,7 +1423,7 @@ export function createBoardScene(config) {
     scene.updateMatrixWorld();
     raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
     if (draft.shown) {
-      const hit = raycaster.intersectObjects(draftCards.filter((m) => m.visible), false)[0];
+      const hit = raycaster.intersectObjects([...draftCards, ...sideParts.captions].filter((m) => m.visible), false)[0];
       return hit ? actionOf(hit.object) : null;
     }
     const targets = [
@@ -1438,7 +1483,7 @@ export function createBoardScene(config) {
     unitWorld,
     dispose,
     parts: {
-      sides, draftCards, surfaces, effects,
+      sides, draftCards, sideParts, surfaces, effects,
       get ghost() { return ghost?.obj ?? null; },
     },
     get azimuth() { return cam.azimuth; },

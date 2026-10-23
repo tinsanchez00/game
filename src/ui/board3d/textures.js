@@ -492,6 +492,60 @@ function drawStarBadge(ctx, cw, ch, text) {
   ctx.fillText(text, cw * 0.64, ch / 2 + 2);
 }
 
+/** The star-cost badge for an upside-down card (placeholder look). */
+export function starCost(n) {
+  return cached(`cost:${n}`, 208, 96, (ctx, cw, ch) => {
+    ctx.clearRect(0, 0, cw, ch);
+    drawStarBadge(ctx, cw, ch, String(n));
+  });
+}
+
+function outlined(ctx, text, x, y, fill) {
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = 'rgba(12,10,8,0.85)';
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = fill;
+  ctx.fillText(text, x, y);
+}
+
+/** Caption texture size (see sideCaption). */
+export const CAPTION = Object.freeze({ w: 512, h: 224 });
+
+/** A title over a note of up to two lines, centred: the caption under a side of the held power. */
+export function sideCaption(title, note) {
+  return cached(`caption:${title}|${note}`, CAPTION.w, CAPTION.h, (ctx, cw, ch) => {
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = font(DISPLAY, 52);
+    outlined(ctx, title, cw / 2, 42, COL.gold);
+    ctx.font = font(BODY, 38, 500);
+    const lines = [];
+    let line = '';
+    for (const word of note.split(' ')) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && ctx.measureText(next).width > cw * 0.94) {
+        lines.push(line);
+        line = word;
+      } else line = next;
+    }
+    if (line) lines.push(line);
+    lines.slice(0, 3).forEach((l, i) => outlined(ctx, l, cw / 2, 108 + i * 46, COL.shellBright));
+  });
+}
+
+/** One line of display text, centred (the heading over the side picker). */
+export function headingText(text) {
+  return cached(`heading:${text}`, 1024, 96, (ctx, cw, ch) => {
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = font(DISPLAY, 60);
+    outlined(ctx, text, cw / 2, ch / 2 + 2, COL.gold);
+  });
+}
+
 // --- glow halos ------------------------------------------------------------------------
 
 /**
