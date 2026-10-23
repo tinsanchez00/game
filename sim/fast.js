@@ -152,6 +152,24 @@ export function genMoves(fs, p, d, back = false, only = -1) {
   return out;
 }
 
+/**
+ * The Hermit's moves for player p with card d: moves without an escort onto
+ * a cell already holding one of p's units, as [unit, -1] pairs.
+ */
+export function hermitMoves(fs, p, d) {
+  return genMoves(fs, p, d).filter(([i, e]) => {
+    if (e >= 0) return false;
+    const t = dest(fs, i, d);
+    const c = fs.cellIdx[p][t];
+    return c >= 0 && fs.occ[p][c] > 0;
+  });
+}
+
+/** Can unit i (alone) move forward d? */
+export function canPushAlone(fs, i, d) {
+  return genMoves(fs, fs.owner[i], d, false, i).some(([u, e]) => u === i && e < 0);
+}
+
 export function lift(fs, i) {
   const p = fs.owner[i];
   const from = fs.pos[i];
@@ -268,6 +286,7 @@ export function cardModeOf(fs, state) {
   if (state.campsite) return { back: false, only: idx(state.campsite.unit) };
   if (state.hanged?.stage === 'back') return { back: true, only: -1 };
   if (state.hanged?.stage === 'forward') return { back: false, only: idx(state.hanged.unit) };
+  if (state.hermit) return { back: false, only: -1, hermit: true };
   return { back: false, only: -1 };
 }
 

@@ -32,11 +32,11 @@ import {
 } from '../src/rules/index.js';
 import { DEFAULT_WEIGHTS, WIN, endWaitTable, evaluate } from './bot.js';
 import {
-  apply, buildFast, cardModeOf, discardCounts, drawCounts, genMoves, lift, loversTarget, place,
+  apply, buildFast, canPushAlone, cardModeOf, discardCounts, drawCounts, genMoves, hermitMoves, lift, loversTarget, place,
   returnCard, takeCard, undo,
 } from './fast.js';
 import {
-  HM, LOVERS, NO_TARGET, applyDraft, usable, applyPower, draftOdds, powerTargets, undoDraft, undoPower,
+  HERMIT, HM, LOVERS, NO_TARGET, applyDraft, usable, applyPower, draftOdds, powerTargets, undoDraft, undoPower,
 } from './fastpowers.js';
 
 /** Value of holding each power, in progress points (pips). */
@@ -293,8 +293,9 @@ function resolveCard(fs, q, k, depth, ctx) {
     const p = fs.held[q];
     // After draw, free powers can't be used on a Joker (it drafts) and need a
     // move for a number card (backward for the Hanged Man).
-    const free = p === HM || (p === LOVERS && fs.loversLine);
-    if (!free || (k < fs.J && genMoves(fs, q, fs.values[k], p === HM).length > 0)) {
+    const free = p === HM || p === HERMIT || (p === LOVERS && fs.loversLine);
+    const hasMove = () => (p === HERMIT ? hermitMoves(fs, q, fs.values[k]).length > 0 : genMoves(fs, q, fs.values[k], p === HM).length > 0);
+    if (!free || (k < fs.J && hasMove())) {
       for (const t of powerTargets(fs, q, p)) {
         const v = afterPower(fs, q, p, t, k, depth, ctx);
         if (isBetter(v, best)) best = v;
@@ -371,10 +372,62 @@ function loversCard(fs, q, k, depth, ctx) {
   return v === undefined ? endTurn(fs, q, depth, ctx) : v;
 }
 
+/**
+ * The Hermit's move of unit u onto an ally with card d, then the push: that
+ * ally moves d forward alone when it can (its landing may start a campsite
+ * card); then the turn ends.
+ */
+function hermitMove(fs, q, u, d, depth, ctx) {
+  const rec = play(fs, q, u, -1, d, false);
+  let v;
+  if (rec.won) {
+    v = winFor(q, ctx);
+  } else {
+    let ally = -1;
+    for (let i = 0; i < fs.n; i += 1) {
+      if (i !== u && fs.owner[i] === q && fs.pos[i] === rec.t) {
+        ally = i;
+        break;
+      }
+    }
+    if (ally >= 0 && canPushAlone(fs, ally, d)) {
+      const push = play(fs, q, ally, -1, d, false);
+      v = afterLanding(fs, q, push, END, depth, ctx);
+      unplay(fs, push);
+    } else {
+      v = endTurn(fs, q, depth, ctx);
+    }
+  }
+  unplay(fs, rec);
+  return v;
+}
+
+/**
+ * The Hermit's card k: the best move onto an ally, then the push. (Before
+ * draw: a Joker drafts as usual, and a card with no move onto an ally is a
+ * normal move.)
+ */
+function hermitCard(fs, q, k, depth, ctx) {
+  if (k === fs.J) return jokerValue(fs, q, END, depth, ctx);
+  const d = fs.values[k];
+  const moves = hermitMoves(fs, q, d);
+  if (moves.length === 0) {
+    const v = bestMove(fs, q, d, false, -1, END, depth, ctx);
+    return v === undefined ? endTurn(fs, q, depth, ctx) : v;
+  }
+  const isBetter = better(ctx, q);
+  let best = worst(ctx, q);
+  for (const [u] of moves) {
+    const v = hermitMove(fs, q, u, d, depth, ctx);
+    if (isBetter(v, best)) best = v;
+  }
+  return best;
+}
+
 /** q uses power p on target t; k is the drawn card slot, or -1 before drawing. */
 function afterPower(fs, q, p, t, k, depth, ctx) {
   const rec = applyPower(fs, q, p, t);
-  const free = p === HM ? hangedCard : p === LOVERS && fs.loversLine ? loversCard : null;
+  const free = p === HM ? hangedCard : p === HERMIT ? hermitCard : p === LOVERS && fs.loversLine ? loversCard : null;
   let v;
   if (!free) {
     v = endTurn(fs, q, depth, ctx);
@@ -450,7 +503,7 @@ export function powerBot(options = {}) {
   let startDraw = -1; // draw-pile size at a before-draw turn start, else -1
   function depthFor(state) {
     const me = state.current;
-    const midTurn = state.hanged || state.campsite || state.lovers;
+    const midTurn = state.hanged || state.campsite || state.lovers || state.hermit;
     const drawSize = state.moveDecks[me].draw.length;
     const sameTurn = startDraw >= 0 && state.drawn !== null
       && drawSize === (startDraw > 0 ? startDraw - 1 : state.config.moveDeck.length - 1);
@@ -521,7 +574,13 @@ export function powerBot(options = {}) {
       let cont = state.campsite && state.hanged?.stage === 'back' ? afterBack(fs, idx(state.hanged.unit)) : END;
       // "Line" Lovers card move: the mover's jump follows (the campsite unit's, during its card).
       if (state.lovers) cont = state.campsite ? jumpFor(idx(state.campsite.unit)) : JUMP_MOVER;
-      if (isNumberCard(state.drawn)) {
+      if (isNumberCard(state.drawn) && state.hermit) {
+        // The Hermit's card: a move onto an ally, then the push.
+        const d = state.drawn;
+        for (const m of hermitMoves(fs, me, d)) {
+          opts.push({ action: { kind: 'move', move: engineMove(fs, m) }, value: () => hermitMove(fs, me, m[0], d, depth, ctx) });
+        }
+      } else if (isNumberCard(state.drawn)) {
         const d = state.drawn;
         for (const m of genMoves(fs, me, d, back, only)) {
           opts.push({

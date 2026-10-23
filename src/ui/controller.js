@@ -75,10 +75,15 @@ function changedToHome(before, after, exclude = new Set()) {
 function previewMove(g, move) {
   const after = R.applyMove(g, move, g.drawn);
   const moving = new Set([move.unit, move.escort].filter(Boolean));
-  return {
-    dest: unitKey(after, R.getUnit(after, move.unit)),
-    victims: changedToHome(g, after, moving),
-  };
+  const dest = unitKey(after, R.getUnit(after, move.unit));
+  // The Hermit: the ally on the landing cell is pushed on; where it ends up.
+  let push = null;
+  if (g.hermit) {
+    const ally = g.units.find((u) => u.player === g.current && !moving.has(u.id) && unitKey(g, u) === dest);
+    const to = ally ? unitKey(after, R.getUnit(after, ally.id)) : null;
+    if (ally && to !== dest) push = { unit: ally.id, from: dest, to };
+  }
+  return { dest, victims: changedToHome(g, after, moving), push };
 }
 
 // --- power targets ----------------------------------------------------------
@@ -147,7 +152,7 @@ export function interactions(m) {
   const pick = m.ui.pick;
   const out = {
     phase, tappable: [], selected: null, dest: null, targets: [], victims: [],
-    options: [], chosen: null, canConfirm: false, lines: [],
+    options: [], chosen: null, canConfirm: false, lines: [], push: null,
     canUsePower: !m.ui.using && R.canUsePower(g) && phase !== 'won' && phase !== 'handoff',
     power: g.held[g.current],
   };
@@ -162,7 +167,7 @@ export function interactions(m) {
       const chosen = opts.find((o) => o.sig === pick.sig);
       if (chosen) {
         const p = previewMove(g, chosen.move);
-        Object.assign(out, { chosen: chosen.sig, dest: p.dest, victims: p.victims, canConfirm: true });
+        Object.assign(out, { chosen: chosen.sig, dest: p.dest, victims: p.victims, push: p.push, canConfirm: true });
         out.tappable = [...new Set([...out.tappable, p.dest])];
       }
     }
@@ -234,7 +239,7 @@ function describe(before, after, actor) {
     events.push({ type: 'drafted', player: actor, power: after.held[actor] });
   }
   // The same player starts a new turn (Hanged Man, or the tower extra-turn rule).
-  const turnStart = (s) => s.drawn === null && !s.hanged && !s.campsite && !s.lovers;
+  const turnStart = (s) => s.drawn === null && !s.hanged && !s.campsite && !s.lovers && !s.hermit;
   if (after.winner === null && after.current === actor && turnStart(after) && !turnStart(before)) {
     events.push({ type: 'extraTurn', player: actor });
   }
@@ -272,7 +277,7 @@ export function update(m, action) {
 
     case 'continue': {
       // Only a turn's own card loses the turn; a Hanged Man, campsite or Lovers card just doesn't move.
-      const event = { type: g.hanged || g.campsite || g.lovers ? 'noMove' : 'turnLost', player: g.current };
+      const event = { type: g.hanged || g.campsite || g.lovers || g.hermit ? 'noMove' : 'turnLost', player: g.current };
       if (phase === 'jokerPass') return commit(m, R.passJoker(g), [event]);
       if (phase !== 'stuck') return m;
       return commit(m, R.playDrawnNumber(g, null), [event]);

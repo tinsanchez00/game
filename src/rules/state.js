@@ -14,6 +14,7 @@
 //   hanged,              null, or { stage, unit } while a Hanged Man use resolves
 //   campsite,            null, or { unit } when `drawn` came from a campsite
 //   lovers,              null, or { stage, unit } while a "line" Lovers use resolves
+//   hermit,              null, or { stage: 'move', steps } while a Hermit use resolves
 //   bonusTurn,           true when a move this turn earned another turn
 // }
 //
@@ -83,6 +84,7 @@ export function createGame({ seed = randomSeed(), firstPlayer, config = {} } = {
     hanged: null,
     campsite: null,
     lovers: null,
+    hermit: null,
     bonusTurn: false,
   };
 }

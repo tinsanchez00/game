@@ -817,7 +817,16 @@ export function createBoardScene(config) {
         c.halo.material.color.setHex(C.glowSel);
         c.halo.material.opacity = 0.6;
       }
-      if (can && !sel && !dest) pulseKeys.add(key);
+      if (key === ix.push?.to) {
+        // The Hermit: where the ally will be pushed.
+        c.fill.material.color.setHex(C.hermit);
+        c.fill.material.opacity = 0.45;
+        c.frame.material.color.setHex(C.hermit);
+        c.frame.material.opacity = 1;
+        c.halo.material.color.setHex(C.hermit);
+        c.halo.material.opacity = 0.9;
+      }
+      if (can && !sel && !dest && key !== ix.push?.to) pulseKeys.add(key);
       if (victimKeys.has(key) && !dest) {
         c.frame.material.color.setHex(C.carnelian);
         c.frame.material.opacity = 1;
@@ -1186,28 +1195,6 @@ export function createBoardScene(config) {
     ring(x, z, 0xfff0c0, { delay: delay + 60, dur: 520, now, size: 2 });
   }
 
-  /** A warm lantern glow travelling along the middle lane. */
-  function sweep(color, { now } = {}) {
-    const lane = layout.cells.filter((c) => c.row === 1).sort((a, b) => a.x - b.x);
-    if (!lane.length) return;
-    const g = new THREE.Group();
-    const halo = makeHalo(CELL * 0.94, CELL * 0.94, 0.5);
-    halo.material.color.setHex(color);
-    halo.visible = true;
-    halo.position.y = TILE_TOP + 0.02;
-    const light = new THREE.PointLight(color, 0, 4, 1.5);
-    light.position.y = 0.9;
-    g.add(halo, light);
-    const x0 = lane[0].x;
-    const x1 = lane[lane.length - 1].x;
-    addEffect(g, 900, (t) => {
-      g.position.set(lerp(x0, x1, easeInOut(t)), 0, lane[0].z);
-      const f = Math.sin(Math.PI * t);
-      halo.material.opacity = f;
-      light.intensity = 10 * f;
-    }, 0, now);
-  }
-
   /** A heart rising from (x, z). */
   function heartRise(x, z, { now } = {}) {
     const tex = TX.heartGlyph();
@@ -1235,12 +1222,16 @@ export function createBoardScene(config) {
 
     if (played?.power === R.POWERS.TOWER) {
       layout.cells.filter((c) => c.tower).forEach((c, i) => bolt(c.x, c.z, { delay: i * 90, now }));
-    } else if (played?.power === R.POWERS.HERMIT) {
-      sweep(C.hermit, { now });
     } else if (played?.power === R.POWERS.DEVIL) {
       for (const c of middle) ring(c.x, c.z, C.carnelian, { delay: Math.abs(c.x) * 40, now, size: 1.8 });
     } else if (played?.power === R.POWERS.LOVERS) {
       for (const m of movedBy(played.player)) if (m.to?.where === 'cell') heartRise(m.to.x, m.to.z, { now });
+    }
+    // The Hermit: lantern rings where the unit lands and where its ally is pushed to.
+    if (prev.hermit && prev.drawn !== null) {
+      movedBy(prev.current).forEach((m, i) => {
+        if (m.to) ring(m.to.x, m.to.z, C.hermit, { now, delay: i * 200, y: m.to.y + 0.03 });
+      });
     }
     // The Hanged Man: rings where the unit falls from and lands, on the backward move itself.
     if (prev.hanged && prev.drawn !== null) {
@@ -1287,7 +1278,7 @@ export function createBoardScene(config) {
     const fresh = anim && game !== lastGame;
     if (fresh) powerEffects(lastGame, game, model.ui.events ?? [], now);
     const played = fresh ? (model.ui.events ?? []).find((e) => e.type === 'played')?.power : null;
-    const HIT = { [R.POWERS.TOWER]: 260, [R.POWERS.DEVIL]: 220, [R.POWERS.HERMIT]: 380 };
+    const HIT = { [R.POWERS.TOWER]: 260, [R.POWERS.DEVIL]: 220 };
     syncUnits(game, anim, now, HIT[played] ?? 0);
     syncHighlights(ix);
     syncLines(ix);

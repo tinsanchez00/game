@@ -17,9 +17,11 @@
 //     (hanged.stage 'forward');
 //   - the "line" Lovers (rules.loversLine) resolves the card as a normal move
 //     (lovers.stage 'move'), then offers loversJumps / playLoversJump
-//     (lovers.stage 'jump').
+//     (lovers.stage 'jump');
+//   - the Hermit resolves the card as a move onto an ally (hermit.stage
+//     'move'); the ally is then pushed by the same number (moves.js).
 // The turn is over when state.current changes, or for an extra turn when
-// drawn, hanged, campsite and lovers are all null again.
+// drawn, hanged, campsite, lovers and hermit are all null again.
 
 import { JOKER, POWERS, isNumberCard } from './cards.js';
 import { DUD, POWER_TIMINGS } from './config.js';
@@ -127,14 +129,17 @@ export function passJoker(state) {
 
 /** Powers that use the turn's card rather than spending it. */
 function isFreePower(state, power) {
-  return power === POWERS.HANGED_MAN || (power === POWERS.LOVERS && state.config.rules.loversLine);
+  return power === POWERS.HANGED_MAN || power === POWERS.HERMIT
+    || (power === POWERS.LOVERS && state.config.rules.loversLine);
 }
+
+const HERMIT_MODE = Object.freeze({ backward: false, only: null, hermit: true });
 
 /** Can the current player use their held power right now? */
 export function canUsePower(state) {
   if (state.winner !== null || !state.config.powers) return false;
   const power = state.held[state.current];
-  if (!power || power === DUD || state.hanged || state.campsite || state.lovers) return false;
+  if (!power || power === DUD || state.hanged || state.campsite || state.lovers || state.hermit) return false;
   if (state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW) return state.drawn === null;
   if (state.drawn === null) return false;
   // Free powers use the drawn card: a drawn Joker drafts instead.
@@ -143,6 +148,8 @@ export function canUsePower(state) {
   if (power === POWERS.HANGED_MAN) {
     return legalMoves(state, state.current, state.drawn, undefined, { backward: true, only: null }).length > 0;
   }
+  // The Hermit needs a move onto an ally.
+  if (power === POWERS.HERMIT) return legalMoves(state, state.current, state.drawn, undefined, HERMIT_MODE).length > 0;
   if (isFreePower(state, power)) {
     return legalMoves(state, state.current, state.drawn, undefined, { backward: false, only: null }).length > 0;
   }
@@ -181,6 +188,15 @@ export function usePower(state, args = {}) {
   if (power === POWERS.HANGED_MAN) {
     const backward = { ...used, hanged: { stage: 'back', unit: null } };
     return state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? drawCard(backward) : backward;
+  }
+  if (power === POWERS.HERMIT) {
+    const s = state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? drawCard(used) : used;
+    // A move onto an ally, then the push. (Before draw, a Joker then drafts as
+    // usual and a card with no move onto an ally is played as a normal move.)
+    if (isNumberCard(s.drawn) && legalMoves(s, player, s.drawn, undefined, HERMIT_MODE).length > 0) {
+      return { ...s, hermit: { stage: 'move', steps: s.drawn } };
+    }
+    return s;
   }
   if (power === POWERS.LOVERS && state.config.rules.loversLine) {
     const s = state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? drawCard(used) : used;

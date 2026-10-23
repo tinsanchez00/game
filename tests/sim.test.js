@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as R from '../src/rules/index.js';
-import { apply, buildFast, cardModeOf, discardCounts, genMoves, loversTarget, undo } from '../sim/fast.js';
+import { apply, buildFast, cardModeOf, discardCounts, genMoves, hermitMoves, loversTarget, undo } from '../sim/fast.js';
 import { applyPower, powerTargets, undoPower } from '../sim/fastpowers.js';
 import { powerBot } from '../sim/powerbot.js';
 import { greedyBot, randomBot, searchBot } from '../sim/bot.js';
@@ -421,4 +421,20 @@ test('power bots play full games with the extra-turn Hanged Man', () => {
     }
   }
   assert.ok(used > 0, `used ${used}`);
+});
+
+test("fast Hermit moves (onto an ally, no escort) match the engine's", () => {
+  const random = rng(4242);
+  for (const config of CONFIGS) {
+    for (let n = 0; n < 40; n += 1) {
+      const s = randomPosition(config, random);
+      if (s.winner !== null) continue;
+      const fs = buildFast(s);
+      for (let d = 1; d <= 4; d += 1) {
+        const engine = new Set(R.legalMoves(s, s.current, d, undefined, { backward: false, only: null, hermit: true }).map((m) => key(s, m)));
+        const fast = new Set(hermitMoves(fs, s.current, d).map(([u]) => key(s, { unit: fs.ids[u] })));
+        assert.deepEqual([...fast].sort(), [...engine].sort());
+      }
+    }
+  }
 });

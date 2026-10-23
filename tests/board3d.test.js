@@ -6,6 +6,7 @@ import { boardLayout3d, CARD, DECK, STACK_OFFSET, TILE_TOP, TRAY_TOP, unitPlacem
 import { allowed } from '../src/ui/board3d/mount.js';
 import { createBoardScene, TIMING } from '../src/ui/board3d/scene.js';
 import { gameWith } from './helpers.js';
+import { view } from '../src/ui/view.js';
 
 const G = R.geometry(R.DEFAULT_CONFIG);
 
@@ -369,3 +370,26 @@ test('phone on the table: the draft cards turn to face the player drafting', () 
   assert.deepEqual(board.pick(pa.x, pa.y), { type: 'keep', index: 0 });
   assert.ok(board.screenOf(a).x > board.screenOf(b).x, "the first card is on the drafting player's left");
 });
+
+test('The Hermit: the move onto an ally shows where the ally will be pushed, and the push plays out', () => {
+  let model = initModel(gameWith({ 'p0-s1': 6, 'p0-s2': 9 }, { drawn: 3 }));
+  model.game.held[0] = R.POWERS.HERMIT;
+  const board = sceneFor(model);
+  model = step(board, model, { type: 'use-power' }, 0);
+  assert.deepEqual(model.game.hermit, { stage: 'move', steps: 3 });
+  assert.match(pageOf(model), /The Hermit · move a unit 3 onto an ally/);
+  model = step(board, model, { type: 'tap', key: G.cellId(0, 6) }, 10);
+  const ix = interactions(model);
+  assert.equal(ix.dest, G.cellId(0, 9));
+  assert.deepEqual(ix.push, { unit: 'p0-s2', from: G.cellId(0, 9), to: G.cellId(0, 12) });
+  const pushCell = board.parts.surfaces.get(G.cellId(0, 12));
+  assert.ok(pushCell.fill.material.opacity > 0.3, 'the push target is marked');
+  assert.notEqual(pushCell.halo.material.color.getHex(), board.parts.surfaces.get(G.cellId(0, 9)).halo.material.color.getHex());
+  model = step(board, model, { type: 'confirm' }, 20);
+  assert.equal(R.getUnit(model.game, 'p0-s2').pos, 12);
+  assert.ok(board.parts.effects.length >= 2, 'lantern rings where both land');
+});
+
+function pageOf(model) {
+  return view(model);
+}

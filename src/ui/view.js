@@ -18,7 +18,7 @@ function stateClasses(key, ix, victimKeys) {
   const cls = [];
   if (ix.tappable.includes(key)) cls.push('can');
   if (key === ix.selected) cls.push('sel');
-  if (key === ix.dest || ix.targets.includes(key)) cls.push('dest');
+  if (key === ix.dest || key === ix.push?.to || ix.targets.includes(key)) cls.push('dest');
   if (victimKeys.has(key)) cls.push('cap');
   return cls;
 }
@@ -230,6 +230,7 @@ function eventsLine(m) {
 function stepOf(g) {
   if (g.campsite) return 'campsite';
   if (g.lovers) return 'lovers';
+  if (g.hermit) return 'hermit';
   return g.hanged?.stage ?? null;
 }
 

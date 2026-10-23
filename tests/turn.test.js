@@ -143,7 +143,7 @@ test('a joker while holding a power: draft, or use the power instead', () => {
 });
 
 test('a power drafted this turn is first usable next turn', () => {
-  let g = playDraft(drawCard(holding(null, { deck: [JOKER, 2, 3] })), 0);
+  let g = playDraft(drawCard(holding(null, { deck: [JOKER, 2, 3], powerDeck: [POWERS.TOWER, POWERS.DEVIL] })), 0);
   assert.equal(g.current, 1);
   g = R.playDrawnNumber(drawCard(g), { unit: 'p1-s1' });
   g = drawCard(g);

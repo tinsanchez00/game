@@ -13,6 +13,9 @@
 //              resolving (rules.loversLine); then, after a card move,
 //              { stage: 'jump', unit }: `unit` may jump onto the ally it sees
 //              ahead in its lane (loversJumps)
+//   hermit     { stage: 'move', steps } while the Hermit's card move is
+//              resolving: only moves onto a cell holding an ally, without an
+//              escort; on landing, that ally moves forward by `steps`
 //   bonusTurn  set when a move earned another turn (rules.towerExtraTurn)
 
 import { HOME, geometry } from './board.js';
@@ -77,8 +80,9 @@ function canLand(state, g, occ, player, target, count) {
  */
 export function cardMode(state, player = state.current) {
   if (player !== state.current) return { backward: false, only: null };
-  const { hanged, campsite } = state;
+  const { hanged, campsite, hermit } = state;
   if (campsite) return { backward: false, only: campsite.unit };
+  if (hermit?.stage === 'move') return { backward: false, only: null, hermit: true };
   if (hanged?.stage === 'back') return { backward: true, only: null };
   if (hanged?.stage === 'forward') return { backward: false, only: hanged.unit };
   return { backward: false, only: null };
@@ -90,9 +94,9 @@ export function legalMoves(state, player, steps, occ = occupancy(state), mode = 
     throw new Error('legalMoves: steps must be a positive integer');
   }
   const g = geometry(state.config);
-  const { backward, only } = mode;
+  const { backward, only, hermit = false } = mode;
   const locked = isCommanderLocked(state, player);
-  const escort = state.config.rules.escort;
+  const escort = state.config.rules.escort && !hermit; // the Hermit moves alone
   const moves = [];
   for (const unit of state.units) {
     if (unit.player !== player) continue;
@@ -100,6 +104,8 @@ export function legalMoves(state, player, steps, occ = occupancy(state), mode = 
     if (unit.type === 'commander' && locked && unit.pos === HOME) continue;
     const target = destination(state, g, unit, steps, backward);
     if (target === null) continue;
+    // The Hermit: only onto a cell already holding one of the player's units.
+    if (hermit && !(g.isOnBoard(target) && occ[player][g.cellIndex(player, target)] > 0)) continue;
 
     if (canLand(state, g, occ, player, target, 1)) moves.push({ unit: unit.id });
 
@@ -136,6 +142,7 @@ export function endTurn(state, extraTurn = false) {
     hanged: null,
     campsite: null,
     lovers: null,
+    hermit: null,
     bonusTurn: false,
     current: keep ? state.current : otherPlayer(state.current),
   };
@@ -158,6 +165,8 @@ function pickFromDiscard(state) {
  * card, moves a Hanged Man use to its forward stage, or ends the turn.
  */
 export function continueTurn(state, landing = null) {
+  // The Hermit: the ally the unit landed on is pushed (instead of a campsite card).
+  if (state.hermit?.stage === 'move' && landing) return pushAlly(state, landing);
   const g = geometry(state.config);
   const done = { ...state, drawn: null, campsite: null };
   if (landing && g.isCampsite(landing.pos)) {
@@ -173,6 +182,22 @@ export function continueTurn(state, landing = null) {
   const mover = landing?.unit ?? state.campsite?.unit ?? null;
   if (done.lovers?.stage === 'move' && mover !== null) return startLoversJump(done, mover);
   return endTurn(done);
+}
+
+// --- the Hermit's push ------------------------------------------------------------
+
+/**
+ * After the Hermit's card move landed `landing.unit` on an ally: that ally
+ * moves forward by the same number, alone, as a normal card move (it may
+ * capture and trigger the campsite). If it can't move, it stays.
+ */
+function pushAlly(state, landing) {
+  const { steps } = state.hermit;
+  const base = { ...state, drawn: null, campsite: null, hermit: null };
+  const ally = base.units.find((u) => u.player === base.current && u.id !== landing.unit && u.pos === landing.pos);
+  if (!ally) return endTurn(base);
+  const valid = legalMoves(base, base.current, steps).some((m) => m.unit === ally.id && !m.escort);
+  return valid ? applyLegalMove(base, { unit: ally.id }, steps) : endTurn(base);
 }
 
 // --- the "line" Lovers jump ---------------------------------------------------
@@ -266,7 +291,7 @@ export function applyLegalMove(state, move, steps) {
     }
   }
   if (won) {
-    return { ...state, units, drawn: null, hanged: null, campsite: null, lovers: null, bonusTurn: false, winner: player };
+    return { ...state, units, drawn: null, hanged: null, campsite: null, lovers: null, hermit: null, bonusTurn: false, winner: player };
   }
 
   const towerTurn = state.config.rules.towerExtraTurn && !backward && g.isTower(target);

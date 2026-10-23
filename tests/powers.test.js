@@ -300,30 +300,7 @@ test('Tower: destroys every unit on every tower, both teams', () => {
   assert.equal(pos(after, 'p0-s4'), 4);
 });
 
-// --- The Hermit ---
-
-test('Hermit: every middle-lane stack loses one unit, commander first', () => {
-  const g = playing(POWERS.HERMIT, {
-    ...soldiersOut(0, [6, 10, 10, 1, 2]),
-    'p0-c1': 6,
-    ...soldiersOut(1, [11, 11, 1, 2, 3]),
-  });
-  const after = usePower(g);
-  assert.equal(pos(after, 'p0-c1'), HOME);
-  assert.equal(pos(after, 'p0-s1'), 6);
-  const atTen = ['p0-s2', 'p0-s3'].filter((id) => pos(after, id) === 10);
-  assert.equal(atTen.length, 1);
-  const atEleven = ['p1-s1', 'p1-s2'].filter((id) => pos(after, id) === 11);
-  assert.equal(atEleven.length, 1);
-});
-
-test('Hermit: stacks on a tower and in private lanes are safe', () => {
-  const g = playing(POWERS.HERMIT, { 'p0-s1': 7, 'p0-s2': 7, 'p0-s3': 2, 'p0-s4': 2 });
-  const after = usePower(g);
-  for (const id of ['p0-s1', 'p0-s2', 'p0-s3', 'p0-s4']) {
-    assert.notEqual(pos(after, id), HOME, id);
-  }
-});
+// The Hermit: see hermit.test.js.
 
 // --- no-effect use ---
 

@@ -64,6 +64,7 @@ export const TEXT = {
       forward: `The Hanged Man · move ${n} forward`,
       campsite: `Campsite · move that unit ${n} again`,
       lovers: `The Lovers · move a unit ${n} forward`,
+      hermit: `The Hermit · move a unit ${n} onto an ally`,
     })[step] ?? `Move a unit ${n} forward`,
     pickMove: 'Tap the glowing cell to move there',
     stuck: (n, step) => ({

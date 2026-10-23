@@ -63,8 +63,9 @@ function move(fs, rec, i, t) {
 
 /**
  * Applies held power k for player p with `target` (from powerTargets). The
- * power leaves p's hand for the bottom of the power deck. For the Hanged
- * Man nothing moves here: the caller resolves the turn's card backward.
+ * power leaves p's hand for the bottom of the power deck. For the free powers
+ * (Hanged Man, line Lovers, Hermit) nothing moves here: the caller resolves
+ * the turn's card.
  * Returns an undo record.
  */
 export function applyPower(fs, p, k, target) {
@@ -83,23 +84,9 @@ export function applyPower(fs, p, k, target) {
     for (let i = 0; i < fs.n; i += 1) {
       if (fs.pos[i] !== HOME && fs.pos[i] !== fs.A && fs.tower[fs.pos[i]]) move(fs, rec, i, HOME);
     }
-  } else if (k === HERMIT) {
-    const stacks = new Map();
-    for (let i = 0; i < fs.n; i += 1) {
-      const q = fs.pos[i];
-      if (!shared(fs, q) || (fs.protect && fs.tower[q])) continue;
-      if (!stacks.has(q)) stacks.set(q, []);
-      stacks.get(q).push(i);
-    }
-    for (const stack of stacks.values()) {
-      if (stack.length < 2) continue;
-      let victim = stack.find((i) => fs.cmd[i]);
-      if (victim === undefined) {
-        victim = [...stack].sort((a, b) => fs.ids[a].localeCompare(fs.ids[b])).at(-1);
-      }
-      move(fs, rec, victim, HOME);
-    }
   }
+  // The Hermit, like the Hanged Man and the line Lovers, moves nothing here:
+  // the caller resolves the card as a move onto an ally, then the push.
   fs.held[p] = -1;
   fs.pdCounts[k] += 1;
   fs.pdTotal += 1;

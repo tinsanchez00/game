@@ -88,24 +88,6 @@ function tower(state) {
   return { ...state, units: sendHome(state.units, (u) => g.isTower(u.pos)) };
 }
 
-function hermit(state) {
-  const g = geometry(state.config);
-  const protect = state.config.rules.towersProtect;
-  const victims = new Set();
-  const byCell = new Map();
-  for (const u of middleUnits(state)) {
-    if (protect && g.isTower(u.pos)) continue;
-    byCell.set(u.pos, [...(byCell.get(u.pos) ?? []), u]);
-  }
-  for (const stack of byCell.values()) {
-    if (stack.length < 2) continue;
-    const commander = stack.find((u) => u.type === 'commander');
-    const victim = commander ?? [...stack].sort((a, b) => a.id.localeCompare(b.id)).at(-1);
-    victims.add(victim.id);
-  }
-  return { ...state, units: sendHome(state.units, (u) => victims.has(u.id)) };
-}
-
 /**
  * Applies `power` for `player` with `args` (one of powerChoices). Returns the
  * new state; does not touch turn order, held powers or the power deck.
@@ -129,7 +111,7 @@ export function applyPower(state, player, power, args = {}) {
     case POWERS.TOWER:
       return tower(state);
     case POWERS.HERMIT:
-      return hermit(state);
+      return state; // free power: turn.js resolves the card as a move onto an ally
     default:
       throw new Error(`applyPower: unknown power ${power}`);
   }
