@@ -71,4 +71,6 @@ the visuals can change freely without touching the rules.
 2. Write tests for it in `tests/`.
 3. Implement in `src/rules/`.
 4. For any UI, show options → owner picks → build it.
-5. Commit with a clear, technical message and push to `main`.
+5. Run `npm run stamp` (content hashes in index.html, so phones load the new
+   files at once; `npm test` fails when it's stale), then commit with a clear,
+   technical message and push to `main`.

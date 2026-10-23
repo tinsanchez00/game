@@ -38,8 +38,8 @@ const C = {
   glow: 0x8fe3a4, // what you can act on: soft green (placeholder colour)
   glowSel: 0xfff1d0, // the selected piece: warm white, unlike any target colour
   // The destination shows the consequence of the move (placeholder colours).
-  destMove: 0x5ee6ff, // cyan: unlike the green of what you can select
-  destTower: 0x7a86ff, // indigo: safe on a tower
+  destMove: 0x2f8cff, // saturated blue: unlike the green of what you can select
+  destTower: 0xb27cff, // violet: safe on a tower
   destCamp: 0xf2b45a, // campsite: the unit moves again
   destAscend: 0xf6d77a, // ascends
   hanged: 0xa98cff,
@@ -576,7 +576,7 @@ export function createBoardScene(config) {
   let pulseKeys = new Set();
   let doomed = new Set();
   let glowUnits = new Set(); // pieces you can act on
-  let selecting = false; // a piece is selected: the other selectable ones pulse more quietly
+  let selecting = false; // a piece is selected: the other selectable ones glow more quietly
   // Selection marker: a dashed ring turning around the selected piece's base.
   const selRing = new THREE.Group();
   for (let i = 0; i < 10; i += 1) {
@@ -800,7 +800,7 @@ export function createBoardScene(config) {
       if (dest) {
         const k = destColor(key, victimKeys);
         c.fill.material.color.setHex(k);
-        c.fill.material.opacity = 0.38;
+        c.fill.material.opacity = 0.55;
         c.frame.material.color.setHex(k);
         c.frame.material.opacity = 1;
         c.halo.material.color.setHex(k);
@@ -1288,8 +1288,8 @@ export function createBoardScene(config) {
       ghost.obj.position.y = ghost.base + 0.05 + 0.05 * Math.sin((now / 700) * Math.PI * 2);
       moving = true;
     }
-    // Things you can act on breathe with a glow.
-    const pulse = 0.5 + 0.5 * Math.sin((now / 1400) * Math.PI * 2);
+    // Things you can act on glow steadily.
+    const pulse = 0.6; // steady glow, no breathing
     const quiet = selecting ? 0.4 : 1;
     for (const key of pulseKeys) {
       const c = surfaces.get(key);
@@ -1314,7 +1314,7 @@ export function createBoardScene(config) {
       const p = pieces.get(id);
       if (p && !p.anim) setGlow(p.obj.userData.mats, C.carnelian, 0.35 + 0.25 * pulse);
     }
-    return moving || pulseKeys.size > 0 || doomed.size > 0 || glowUnits.size > 0 || Boolean(glow.deck || glow.power);
+    return moving; // highlights are steady: no frames needed once things stop moving
   }
 
   const raycaster = new THREE.Raycaster();
