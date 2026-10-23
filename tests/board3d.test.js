@@ -304,3 +304,20 @@ test('The Tower strikes the towers with lightning before the pieces there fall',
   for (let t = 1000; t <= 4000; t += 50) board.tick(t);
   assert.equal(board.parts.effects.length, 0, 'effects clear up when done');
 });
+
+test('the selected piece looks different from its target: a turning ring, no fill, another colour', () => {
+  let model = initModel(gameWith({ 'p0-s1': 6 }, { drawn: 2 }));
+  const board = sceneFor(model);
+  model = step(board, model, { type: 'tap', key: G.cellId(0, 6) }, 0);
+  const sel = board.parts.surfaces.get(G.cellId(0, 6));
+  const dest = board.parts.surfaces.get(G.cellId(0, 8));
+  assert.ok(board.parts.selRing.visible);
+  const at = board.layout.byKey.get(G.cellId(0, 6));
+  assert.ok(Math.abs(board.parts.selRing.position.x - at.x) < 1e-6);
+  assert.equal(sel.fill.material.opacity, 0, 'the selection is not filled');
+  assert.ok(dest.fill.material.opacity > 0, 'the target is');
+  assert.notEqual(sel.halo.material.color.getHex(), dest.halo.material.color.getHex());
+  model = update(model, { type: 'cancel' });
+  board.sync(model, interactions(model), { animate: true, now: 10 });
+  assert.ok(!board.parts.selRing.visible);
+});

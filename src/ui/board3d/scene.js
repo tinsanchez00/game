@@ -36,7 +36,7 @@ const C = {
   ascTray: 0x1a2a57,
   room: 0x120d09, // the dark room around the table
   glow: 0x8fe3a4, // what you can act on: soft green (placeholder colour)
-  glowSel: 0xdcffe5, // the current selection
+  glowSel: 0xfff1d0, // the selected piece: warm white, unlike any target colour
   // The destination shows the consequence of the move (placeholder colours).
   destMove: 0x5fd67c,
   destTower: 0x8fbfff, // safe on a tower
@@ -576,6 +576,17 @@ export function createBoardScene(config) {
   let pulseKeys = new Set();
   let doomed = new Set();
   let glowUnits = new Set(); // pieces you can act on
+  // Selection marker: a dashed ring turning around the selected piece's base.
+  const selRing = new THREE.Group();
+  for (let i = 0; i < 10; i += 1) {
+    const arc = new THREE.Mesh(
+      new THREE.RingGeometry(0.36, 0.44, 8, 1, (i / 10) * Math.PI * 2, (Math.PI * 2) / 10 * 0.6).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: C.glowSel, transparent: true, opacity: 0.95, depthWrite: false, fog: false, toneMapped: false }),
+    );
+    selRing.add(arc);
+  }
+  selRing.visible = false;
+  scene.add(selRing);
   const ghosts = new Map(); // 'type:player' -> translucent piece showing where a move lands
   let ghost = null; // { obj, color }
   const effects = []; // { update(t) -> void, dur, start, done() }
@@ -786,12 +797,11 @@ export function createBoardScene(config) {
         c.tileMat.emissiveIntensity = 0.3;
       }
       if (sel) {
-        c.fill.material.color.setHex(C.glowSel);
-        c.fill.material.opacity = 0.3;
+        // No fill (targets are filled); a warm-white frame and halo, and the turning ring below.
         c.frame.material.color.setHex(C.glowSel);
         c.frame.material.opacity = 1;
         c.halo.material.color.setHex(C.glowSel);
-        c.halo.material.opacity = 0.8;
+        c.halo.material.opacity = 0.6;
       }
       if (can && !sel && !dest) pulseKeys.add(key);
       if (victimKeys.has(key) && !dest) {
@@ -803,6 +813,13 @@ export function createBoardScene(config) {
     }
     doomed = victimIds;
     syncGhost(lastGameFor(), ix, victimKeys);
+    const selAt = ix.selected ? posOf(ix.selected) : null;
+    selRing.visible = Boolean(selAt);
+    if (selAt) {
+      const onCell = layout.byKey.has(ix.selected);
+      selRing.position.set(selAt.x, (onCell ? TILE_TOP : TABLE_Y + 0.06) + 0.015, selAt.z);
+      selRing.scale.setScalar(onCell ? 1 : Math.max(selAt.w ?? 1, 1.2) / 0.95);
+    }
     glowUnits = new Set();
     const live = new Set([...ix.tappable, ix.selected].filter(Boolean));
     for (const [id, p] of pieces) {
@@ -1242,6 +1259,10 @@ export function createBoardScene(config) {
     if (stepCards(now)) moving = true;
     if (stepDraft(now)) moving = true;
     if (stepEffects(now)) moving = true;
+    if (selRing.visible) {
+      selRing.rotation.y = (now / 2400) * Math.PI * 2;
+      moving = true;
+    }
     if (ghost) {
       ghost.obj.position.y = ghost.base + 0.05 + 0.05 * Math.sin((now / 700) * Math.PI * 2);
       moving = true;
@@ -1356,6 +1377,7 @@ export function createBoardScene(config) {
     parts: {
       sides, draftCards, surfaces, effects,
       get ghost() { return ghost?.obj ?? null; },
+      selRing,
     },
     get azimuth() { return cam.azimuth; },
     get spinning() { return cam.spin !== null; },
