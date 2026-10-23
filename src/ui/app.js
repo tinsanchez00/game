@@ -3,6 +3,7 @@
 // on first use; without WebGL the flat board is shown instead.
 
 import { interactions } from './controller.js';
+import { TEXT } from './labels.js';
 import { initShell, updateShell, viewShell } from './shell.js';
 
 const STORE_KEY = 'board-game-test-v5';
@@ -56,8 +57,26 @@ export function startApp(root) {
     return three.loading;
   }
 
+  // Android, not fullscreen yet (e.g. the page was opened again): a small button to go back.
+  const fullscreenOffered = () => boardStyle() === '3d' && /Android/i.test(navigator.userAgent)
+    && document.fullscreenEnabled && !document.fullscreenElement;
+
+  function addFullscreenButton() {
+    if (!fullscreenOffered()) return;
+    const bar = root.querySelector('.hud-top') ?? root.querySelector('.menu.start .topbar');
+    if (!bar) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'icon-btn hud-fullscreen';
+    b.dataset.action = 'fullscreen';
+    b.setAttribute('aria-label', TEXT.fullscreen);
+    b.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"></path></svg>';
+    bar.appendChild(b);
+  }
+
   function render({ animate = false } = {}) {
     root.innerHTML = viewShell({ ...shell, board: boardStyle() });
+    addFullscreenButton();
     const host = root.querySelector('[data-board3d]');
     if (!host || !shell.play) return;
     const play = shell.play;
@@ -86,6 +105,10 @@ export function startApp(root) {
   }
 
   function dispatch(action) {
+    if (action.type === 'fullscreen') {
+      enterGameScreen();
+      return;
+    }
     if (['menu-quick', 'menu-start', 'menu-continue'].includes(action.type)) enterGameScreen();
     const before = shell;
     try {
@@ -109,6 +132,9 @@ export function startApp(root) {
     if (el.dataset.value !== undefined) action.value = el.dataset.value;
     dispatch(action);
   });
+
+  // Show or hide the fullscreen button as the page enters or leaves fullscreen.
+  document.addEventListener('fullscreenchange', () => render());
 
   render();
   // Start loading the 3D board early so the first game opens without a wait.

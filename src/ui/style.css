@@ -93,7 +93,9 @@ button { font: inherit; color: inherit; }
 }
 .hud-top > * { pointer-events: auto; }
 .hud-menu { background: rgba(12, 22, 51, 0.85); flex-shrink: 0; }
-.hud-menu svg { stroke: var(--gold); }
+.hud-menu svg, .hud-fullscreen svg { stroke: var(--gold); }
+.hud-fullscreen { background: rgba(12, 22, 51, 0.85); flex-shrink: 0; margin-left: auto; }
+.topbar .hud-fullscreen { width: 40px; height: 40px; }
 .pill {
   min-height: 36px;
   box-sizing: border-box;

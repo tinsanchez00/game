@@ -24,6 +24,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 export const TEXT = {
   testMode: 'Test mode · both players on this phone',
   menu: 'Menu',
+  fullscreen: 'Fullscreen, landscape',
   boardLabel: 'Game table',
   newGame: 'New game',
   restartPrompt: 'Restart?',
