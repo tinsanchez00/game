@@ -438,3 +438,75 @@ test("fast Hermit moves (onto an ally, no escort) match the engine's", () => {
     }
   }
 });
+
+test('fast stars after moves and power effects match the engine, and undo restores them', () => {
+  const random = rng(2468);
+  let deaths = 0;
+  for (const config of POWER_CONFIGS) {
+    for (let n = 0; n < 60; n += 1) {
+      const s0 = randomPosition({ ...config, powers: false }, random);
+      if (s0.winner !== null) continue;
+      // A plain turn start (randomPosition may stop on a campsite card).
+      const s = {
+        ...s0, config: R.makeConfig({ ...config, powers: true }), stars: [2, 3], drawn: null, campsite: null,
+      };
+      const fs = buildFast(s);
+      for (const d of fs.values) {
+        for (const [u, e] of genMoves(fs, s.current, d)) {
+          const move = e >= 0 ? { unit: fs.ids[u], escort: fs.ids[e] } : { unit: fs.ids[u] };
+          const after = R.applyMove(s, move, d);
+          const rec = apply(fs, u, e, d);
+          assert.deepEqual(fs.stars, after.stars, 'stars after a move');
+          deaths += after.stars[0] + after.stars[1] - 5;
+          undo(fs, rec);
+          assert.deepEqual(fs.stars, [2, 3]);
+        }
+      }
+      for (const id of ['devil', 'tower']) {
+        const k = R.POWER_IDS.indexOf(id);
+        for (const t of powerTargets(fs, s.current, k)) {
+          const args = t.length === 1 ? { unit: fs.ids[t[0]] } : {};
+          const after = R.applyPower(s, s.current, id, args);
+          const rec = applyPower(fs, s.current, k, t);
+          assert.deepEqual(fs.stars, after.stars, `stars after ${id}`);
+          deaths += after.stars[0] + after.stars[1] - 5;
+          undoPower(fs, rec);
+          assert.deepEqual(fs.stars, [2, 3]);
+        }
+      }
+    }
+  }
+  assert.ok(deaths > 50, `deaths ${deaths}`);
+});
+
+test('power bots play full games using powers upside down, at both timings', () => {
+  let flips = 0;
+  for (const powerTiming of ['afterDraw', 'beforeDraw']) {
+    for (const level of ['average', 'strong-v1']) {
+      for (const seed of [1, 2]) {
+        const r = playGame({
+          config: { powerTiming, soldiers: 4 },
+          seed,
+          bots: [powerBot({ level, random: rng(seed) }), powerBot({ level, random: rng(seed + 5) })],
+        });
+        assert.ok(r.finished, `${powerTiming} ${level} ${seed}`);
+        for (const p of [0, 1]) {
+          assert.equal(r.starsSpent[p], r.upsideDownUsed[p], 'every test effect costs one star');
+          assert.ok(r.starsGained[p] >= r.starsSpent[p]);
+        }
+        flips += r.upsideDownUsed[0] + r.upsideDownUsed[1];
+      }
+    }
+  }
+  assert.ok(flips > 0, `upside-down uses ${flips}`);
+});
+
+test('with upside-down use switched off, bots never flip a power', () => {
+  const r = playGame({
+    config: { soldiers: 4, rules: { upsideDown: false } },
+    seed: 3,
+    bots: [powerBot({ level: 'average', random: rng(3) }), powerBot({ level: 'average', random: rng(4) })],
+  });
+  assert.ok(r.finished);
+  assert.deepEqual(r.upsideDownUsed, [0, 0]);
+});

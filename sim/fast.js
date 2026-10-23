@@ -8,7 +8,7 @@
 // across several cards (campsite cards, the Hanged Man's forward card) lives
 // in the bots (sim/powerbot.js).
 
-import { CARD_IDS, HOME, JOKER, geometry, otherPlayer } from '../src/rules/index.js';
+import { CARD_IDS, HOME, JOKER, geometry, otherPlayer, upsideDownCost } from '../src/rules/index.js';
 
 export function buildFast(state) {
   const config = state.config;
@@ -75,6 +75,13 @@ export function buildFast(state) {
     held: state.held.map((h) => (h ? CARD_IDS.indexOf(h) : -1)),
     pdCounts: new Int16Array(CARD_IDS.length),
     pdTotal: state.powerDeck.length,
+    // Stars (one per unit that died) and the upside-down cost of each card
+    // (-1: no upside-down side, or upside-down use switched off).
+    stars: [...(state.stars ?? [0, 0])],
+    udCost: Int16Array.from(CARD_IDS, (id) => {
+      const c = upsideDownCost(id);
+      return config.powers && config.rules.upsideDown && c !== null ? c : -1;
+    }),
   };
   for (const id of state.powerDeck) fs.pdCounts[CARD_IDS.indexOf(id)] += 1;
 
@@ -213,6 +220,7 @@ export function apply(fs, u, e, d, back = false) {
         place(fs, i, HOME);
       }
     }
+    fs.stars[o] += captured.length / 2;
   }
   const prevCurrent = fs.current;
   // Landing on a tower with the extra-turn rule keeps the turn (forward moves).
@@ -222,6 +230,7 @@ export function apply(fs, u, e, d, back = false) {
 
 export function undo(fs, rec) {
   fs.current = rec.prevCurrent;
+  fs.stars[1 - fs.owner[rec.u]] -= rec.captured.length / 2;
   for (let k = rec.captured.length - 2; k >= 0; k -= 2) {
     const i = rec.captured[k];
     lift(fs, i);

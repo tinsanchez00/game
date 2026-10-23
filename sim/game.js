@@ -5,8 +5,9 @@
 // included) or choose(state) (sim/bot.js: number-card moves, powers off).
 
 import {
-  CARD_IDS, HOME, canUsePower, createGame, currentMoves, drawCard, geometry,
+  CARD_IDS, HOME, canUsePower, canUsePowerUpsideDown, createGame, currentMoves, drawCard, geometry,
   isNumberCard, mustPassJoker, passJoker, playDraft, playDrawnNumber, playLoversJump, teamSize, usePower,
+  usePowerUpsideDown,
 } from '../src/rules/index.js';
 
 function progress(state, p, A) {
@@ -22,6 +23,7 @@ function blankPowerStats() {
     heldTurns: 0, // turns started holding this card
     discarded: 0, // held, then replaced unused by a different card at a Joker draft
     jumped: 0, // "line" Lovers uses that ended with a jump
+    upsideDown: 0, // uses upside down (also counted in used)
   }]));
 }
 
@@ -60,6 +62,8 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
   const extraTurns = [0, 0];
   const powerKills = [0, 0]; // units each player lost to powers (either side's)
   const powersUsed = [0, 0];
+  const upsideDownUsed = [0, 0];
+  const starsSpent = [0, 0];
   const commanderOut = [null, null];
   const powers = blankPowerStats();
   const campsiteCards = [0, 0]; // cards picked from the discard pile by campsite landings
@@ -118,7 +122,8 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
 
   while (s.winner === null && turns < maxTurns) {
     const p = s.current;
-    const startOfTurn = s.drawn === null && !s.hanged && !s.campsite && !s.lovers;
+    const startOfTurn = s.drawn === null && !s.hanged && !s.campsite && !s.lovers && !s.upsideDown;
+    const canPower = canUsePower(s) || canUsePowerUpsideDown(s);
     if (startOfTurn) {
       turns += 1;
       turnsBy[p] += 1;
@@ -131,14 +136,14 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
     if (s.lovers?.stage === 'jump') {
       a = act(p, s);
     } else if (s.drawn === null) {
-      if (canUsePower(s)) a = act(p, s);
+      if (canPower) a = act(p, s);
       if (!a || a.kind === 'draw') {
         s = drawCard(s);
         if (!isNumberCard(s.drawn)) jokers[p] += 1;
         continue;
       }
     } else if (isNumberCard(s.drawn)) {
-      if (currentMoves(s).length === 0 && !canUsePower(s)) {
+      if (currentMoves(s).length === 0 && !canPower) {
         a = { kind: 'pass' };
       } else if (bots[p].act) {
         a = act(p, s);
@@ -146,7 +151,7 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
         a = { kind: 'move', move: bots[p].choose(s) };
       }
     } else {
-      if (mustPassJoker(s) && !canUsePower(s)) a = { kind: 'passJoker' };
+      if (mustPassJoker(s) && !canPower) a = { kind: 'passJoker' };
       else a = act(p, s);
     }
 
@@ -160,6 +165,16 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
       if (before.drawn === null && s.drawn !== null && !isNumberCard(s.drawn)) jokers[p] += 1;
       if (id === 'hanged-man' || (id === 'lovers' && s.config.rules.loversLine)) pending = { id, before };
       else recordPowerEffect(p, id, before, s);
+    } else if (a.kind === 'upsideDown') {
+      const id = s.held[p];
+      powers[id].used += 1;
+      powers[id].upsideDown += 1;
+      powers[id].usedBy[p] += 1;
+      powersUsed[p] += 1;
+      upsideDownUsed[p] += 1;
+      s = usePowerUpsideDown(s);
+      starsSpent[p] += before.stars[p] - s.stars[p];
+      if (before.drawn === null && s.drawn !== null && s.upsideDown?.stage === 'card' && !isNumberCard(s.drawn)) jokers[p] += 1;
     } else if (a.kind === 'move') {
       s = playDrawnNumber(s, a.move);
       recordMove(p, before, s);
@@ -167,7 +182,7 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
       if (a.jump) powers.lovers.jumped += 1;
       s = playLoversJump(s, a.jump);
     } else if (a.kind === 'pass') {
-      if (!before.hanged && !before.campsite && !before.lovers) wasted[p] += 1;
+      if (!before.hanged && !before.campsite && !before.lovers && !before.upsideDown) wasted[p] += 1;
       s = playDrawnNumber(s, null);
     } else if (a.kind === 'draft') {
       const kept = s.powerDeck[a.index];
@@ -176,13 +191,16 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
       if (old && old !== kept) powers[old].discarded += 1;
       s = playDraft(s, a.index);
     } else if (a.kind === 'passJoker') {
-      if (!before.hanged && !before.campsite && !before.lovers) wasted[p] += 1;
+      if (!before.hanged && !before.campsite && !before.lovers && !before.upsideDown) wasted[p] += 1;
       s = passJoker(s);
     } else {
       throw new Error(`playGame: unknown action ${a.kind}`);
     }
 
     if (s.campsite && s.campsite !== before.campsite) campsiteCards[p] += 1;
+    // Before draw, the turn's card is drawn once an upside-down step has resolved.
+    if (before.upsideDown?.stage === 'step' && before.upsideDown.card === null
+      && s.upsideDown?.stage === 'card' && !isNumberCard(s.drawn)) jokers[p] += 1;
 
     // A free power use is measured once its turn has been resolved.
     if (pending && !s.hanged && !s.lovers) {
@@ -200,6 +218,7 @@ export function playGame({ config, seed, bots, maxTurns = 5000, measureChoices =
     seed, first, winner, finished: winner !== null, turns, turnsBy,
     captured, captureMoves, multiCaptures, wasted, jokers, extraTurns,
     commanderOut, powerKills, powersUsed, powers, campsiteCards, teamSize: size,
+    upsideDownUsed, starsSpent, starsGained: [0, 1].map((p) => s.stars[p] + starsSpent[p]),
   };
   if (winner === null) return record;
 

@@ -4,7 +4,7 @@
 import { HOME, geometry } from './board.js';
 import { POWERS } from './cards.js';
 import { sendHome } from './moves.js';
-import { getUnit } from './state.js';
+import { countDeaths, getUnit } from './state.js';
 
 function middleUnits(state, player = null) {
   const g = geometry(state.config);
@@ -107,9 +107,9 @@ export function applyPower(state, player, power, args = {}) {
     case POWERS.LOVERS:
       return args.unit && !state.config.rules.loversLine ? lovers(state, args) : state;
     case POWERS.DEVIL:
-      return args.unit ? devil(state, args) : state;
+      return args.unit ? countDeaths(state, devil(state, args)) : state;
     case POWERS.TOWER:
-      return tower(state);
+      return countDeaths(state, tower(state));
     case POWERS.HERMIT:
       return state; // free power: turn.js resolves the card as a move onto an ally
     default:

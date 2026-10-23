@@ -57,6 +57,7 @@ export function powerTargets(fs, p, k) {
 
 function move(fs, rec, i, t) {
   rec.moved.push(i, fs.pos[i]);
+  if (t === HOME && fs.pos[i] !== HOME) fs.stars[fs.owner[i]] += 1; // a death
   lift(fs, i);
   place(fs, i, t);
 }
@@ -96,6 +97,7 @@ export function applyPower(fs, p, k, target) {
 export function undoPower(fs, rec) {
   for (let j = rec.moved.length - 2; j >= 0; j -= 2) {
     const i = rec.moved[j];
+    if (fs.pos[i] === HOME && rec.moved[j + 1] !== HOME) fs.stars[fs.owner[i]] -= 1;
     lift(fs, i);
     place(fs, i, rec.moved[j + 1]);
   }
@@ -103,6 +105,30 @@ export function undoPower(fs, rec) {
   fs.pdCounts[rec.k] -= 1;
   fs.pdTotal -= 1;
 }
+
+/**
+ * Uses held card k upside down for player p: pays its star cost, and the card
+ * goes to the bottom of the power deck. The caller resolves the step and the
+ * turn's card. Returns an undo record.
+ */
+export function applyUpsideDown(fs, p, k) {
+  const rec = { p, k, prevHeld: fs.held[p], cost: fs.udCost[k] };
+  fs.stars[p] -= rec.cost;
+  fs.held[p] = -1;
+  fs.pdCounts[k] += 1;
+  fs.pdTotal += 1;
+  return rec;
+}
+
+export function undoUpsideDown(fs, rec) {
+  fs.stars[rec.p] += rec.cost;
+  fs.held[rec.p] = rec.prevHeld;
+  fs.pdCounts[rec.k] -= 1;
+  fs.pdTotal -= 1;
+}
+
+/** Can p use held card k upside down (cost known and affordable)? */
+export const canFlip = (fs, p, k) => k >= 0 && fs.udCost[k] >= 0 && fs.stars[p] >= fs.udCost[k];
 
 /**
  * Chances of each power ending up kept when player p drafts: the better of

@@ -15,6 +15,10 @@
 //   campsite,            null, or { unit } when `drawn` came from a campsite
 //   lovers,              null, or { stage, unit } while a "line" Lovers use resolves
 //   hermit,              null, or { stage: 'move', steps } while a Hermit use resolves
+//   upsideDown,          null, or { stage: 'step', card } while an upside-down use's
+//                        one-cell step resolves (card: the turn's card, null before
+//                        draw), then { stage: 'card' } while the turn's card resolves
+//   stars,               per player: stars collected (one per unit that died)
 //   bonusTurn,           true when a move this turn earned another turn
 // }
 //
@@ -85,12 +89,31 @@ export function createGame({ seed = randomSeed(), firstPlayer, config = {} } = {
     campsite: null,
     lovers: null,
     hermit: null,
+    upsideDown: null,
+    stars: [0, 0],
     bonusTurn: false,
   };
 }
 
 export function getUnit(state, id) {
   return state.units.find((u) => u.id === id) ?? null;
+}
+
+/**
+ * `state` with stars added for every unit that was on the board in
+ * `before` and is home in `state` (a death), except the ids in `except`.
+ */
+export function countDeaths(before, state, except = []) {
+  const was = new Map(before.units.map((u) => [u.id, u.pos]));
+  const stars = [...(state.stars ?? [0, 0])];
+  let any = false;
+  for (const u of state.units) {
+    if (u.pos === HOME && was.get(u.id) !== HOME && !except.includes(u.id)) {
+      stars[u.player] += 1;
+      any = true;
+    }
+  }
+  return any ? { ...state, stars } : state;
 }
 
 export function teamSize(config) {

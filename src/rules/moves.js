@@ -16,11 +16,14 @@
 //   hermit     { stage: 'move', steps } while the Hermit's card move is
 //              resolving: only moves onto a cell holding an ally, without an
 //              escort; on landing, that ally moves forward by `steps`
+//   upsideDown { stage: 'step', card } while an upside-down use's one-cell step
+//              (drawn = 1) and anything it triggers resolve; then the turn's
+//              card is restored (or drawn, before draw) with { stage: 'card' }
 //   bonusTurn  set when a move earned another turn (rules.towerExtraTurn)
 
 import { HOME, geometry } from './board.js';
-import { nextRandom } from './random.js';
-import { getUnit, otherPlayer } from './state.js';
+import { nextRandom, shuffle as shuffleCards } from './random.js';
+import { countDeaths, getUnit, otherPlayer } from './state.js';
 
 export const MAX_UNITS_PER_CELL = 2; // default; games use state.config.maxPerCell
 
@@ -143,6 +146,7 @@ export function endTurn(state, extraTurn = false) {
     campsite: null,
     lovers: null,
     hermit: null,
+    upsideDown: null,
     bonusTurn: false,
     current: keep ? state.current : otherPlayer(state.current),
   };
@@ -181,7 +185,36 @@ export function continueTurn(state, landing = null) {
   }
   const mover = landing?.unit ?? state.campsite?.unit ?? null;
   if (done.lovers?.stage === 'move' && mover !== null) return startLoversJump(done, mover);
+  if (done.upsideDown?.stage === 'step') return resumeTurnCard(done);
   return endTurn(done);
+}
+
+/**
+ * After an upside-down use's step: the turn's card is played as usual (with
+ * the before-draw timing, it is drawn now).
+ */
+export function resumeTurnCard(state) {
+  const { card } = state.upsideDown;
+  const next = { ...state, drawn: card, campsite: null, upsideDown: { stage: 'card' } };
+  if (card !== null) return next;
+  return drawTurnCard(next);
+}
+
+/** Draws the current player's next move card into `drawn` (reshuffling an empty deck). */
+export function drawTurnCard(state) {
+  const player = state.current;
+  let { rng } = state;
+  let { draw, discard } = state.moveDecks[player];
+  if (draw.length === 0) {
+    const s = shuffleCards(state.config.moveDeck, rng);
+    rng = s.rng;
+    draw = s.items;
+    discard = [];
+  }
+  const [card, ...rest] = draw;
+  const moveDecks = [...state.moveDecks];
+  moveDecks[player] = { draw: rest, discard: [...discard, card] };
+  return { ...state, rng, moveDecks, drawn: card };
 }
 
 // --- the Hermit's push ------------------------------------------------------------
@@ -282,6 +315,8 @@ export function applyLegalMove(state, move, steps) {
     }
     return u;
   });
+  // Captured units give their owner stars (a mover sent home backward isn't a death).
+  const { stars } = countDeaths(state, { ...state, units }, [move.unit, move.escort].filter(Boolean));
 
   let won = true;
   for (const u of units) {
@@ -291,11 +326,11 @@ export function applyLegalMove(state, move, steps) {
     }
   }
   if (won) {
-    return { ...state, units, drawn: null, hanged: null, campsite: null, lovers: null, hermit: null, bonusTurn: false, winner: player };
+    return { ...state, units, stars, drawn: null, hanged: null, campsite: null, lovers: null, hermit: null, upsideDown: null, bonusTurn: false, winner: player };
   }
 
   const towerTurn = state.config.rules.towerExtraTurn && !backward && g.isTower(target);
-  const next = { ...state, units, bonusTurn: Boolean(state.bonusTurn) || towerTurn };
+  const next = { ...state, units, stars, bonusTurn: Boolean(state.bonusTurn) || towerTurn };
   if (backward) next.hanged = { stage: 'back', unit: move.unit };
   return continueTurn(next, { unit: move.unit, pos: target });
 }
