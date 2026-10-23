@@ -1,10 +1,12 @@
-// Puts the 3D board on the page: one WebGL canvas that survives the app's
+// Puts the 3D table on the page: one WebGL canvas that survives the app's
 // re-renders (it is moved into each new host element), a render loop that
-// only runs while something moves, and taps turned into the same
-// { type: 'tap', key } actions the flat board sends.
+// only runs while something moves, and taps turned into the same actions the
+// flat board sends ({ type: 'tap', key }, 'draw', { type: 'keep', index }).
 
 import * as THREE from '../../../vendor/three/three.module.js';
+import { RoomEnvironment } from '../../../vendor/three/RoomEnvironment.js';
 import { createBoardScene } from './scene.js';
+import { onTexturesRedrawn } from './textures.js';
 
 const TAP_SLOP = 10; // px a finger may move and still count as a tap
 
@@ -17,25 +19,43 @@ export function webglAvailable() {
   }
 }
 
+/** Whether a picked action applies right now (the same taps the flat board allows). */
+export function allowed(action, model, ix) {
+  if (!action) return false;
+  if (action.type === 'draw') return ix.phase === 'draw' && action.player === model.game.current;
+  if (action.type === 'keep') return ix.phase === 'draft';
+  if (action.type === 'tap') {
+    const live = new Set([...ix.tappable, ...(ix.targets ?? []), ix.dest].filter(Boolean));
+    return live.has(action.key);
+  }
+  return false;
+}
+
 /**
- * createBoardView({ onTap }) -> { attach(host), sync(model, ix, { animate }), dispose() } | null
+ * createBoardView({ onAction }) -> { attach(host), sync(model, ix, { animate }), dispose() } | null
  * Returns null when WebGL isn't available (the app then shows the flat board).
  */
-export function createBoardView({ onTap }) {
+export function createBoardView({ onAction }) {
   if (!webglAvailable()) return null;
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.setClearColor(0x000000, 0);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
   const canvas = renderer.domElement;
   canvas.className = 'board3d-canvas';
+
+  // Soft reflections for the metal and glossy pieces.
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
 
   let board = null;
   let configSig = '';
+  let model = null;
   let ix = null;
   let host = null;
   let frame = 0;
@@ -72,15 +92,17 @@ export function createBoardView({ onTap }) {
     resize();
   }
 
-  function sync(model, interactions, { animate = false } = {}) {
-    const sig = JSON.stringify(model.game.config);
+  function sync(nextModel, interactions, { animate = false } = {}) {
+    const sig = JSON.stringify(nextModel.game.config);
     if (!board || sig !== configSig) {
       board?.dispose();
-      board = createBoardScene(model.game.config);
+      board = createBoardScene(nextModel.game.config);
+      board.scene.environment = envMap;
       configSig = sig;
       animate = false;
       resize();
     }
+    model = nextModel;
     ix = interactions;
     board.sync(model, interactions, { animate: animate && !reducedMotion?.matches, now: performance.now() });
     wake();
@@ -102,14 +124,15 @@ export function createBoardView({ onTap }) {
     const rect = canvas.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     const y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
-    const key = board.pick(x, y);
-    // Same as the flat board: only highlighted cells respond.
-    const live = new Set([...ix.tappable, ...(ix.targets ?? []), ix.dest].filter(Boolean));
-    if (key && live.has(key)) onTap(key);
+    const action = board.pick(x, y);
+    if (!allowed(action, model, ix)) return;
+    if (action.type === 'draw') onAction({ type: 'draw' });
+    else onAction(action);
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) wake();
   });
+  onTexturesRedrawn(wake);
 
   return {
     attach,
@@ -118,6 +141,8 @@ export function createBoardView({ onTap }) {
       cancelAnimationFrame(frame);
       observer?.disconnect();
       board?.dispose();
+      envMap.dispose();
+      pmrem.dispose();
       renderer.dispose();
       canvas.remove();
     },

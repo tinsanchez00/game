@@ -1,1 +1,2 @@
 three.js r186 (npm 0.186.1), files from build/ at tag r186 of https://github.com/mrdoob/three.js, unmodified. MIT license (LICENSE).
+RoomEnvironment.js: examples/jsm/environments/RoomEnvironment.js at r186; only its import of "three" is rewritten to ./three.module.js.

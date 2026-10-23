@@ -46,7 +46,7 @@ export function startApp(root) {
   function loadThree() {
     three.loading ??= import('./board3d/mount.js')
       .then((mod) => {
-        three.view = mod.createBoardView({ onTap: (key) => dispatch({ type: 'tap', key }) });
+        three.view = mod.createBoardView({ onAction: dispatch });
         if (!three.view) three.failed = true;
       })
       .catch((err) => {
@@ -74,7 +74,19 @@ export function startApp(root) {
     else loadThree().then(draw);
   }
 
+  // Android: games go fullscreen and lock to landscape (3D board only).
+  // Must run inside the tap that starts the game; browsers refuse otherwise.
+  function enterGameScreen() {
+    if (boardStyle() !== '3d' || !/Android/i.test(navigator.userAgent)) return;
+    const el = document.documentElement;
+    if (document.fullscreenElement || !el.requestFullscreen) return;
+    el.requestFullscreen({ navigationUI: 'hide' })
+      .then(() => screen.orientation?.lock?.('landscape'))
+      .catch(() => {});
+  }
+
   function dispatch(action) {
+    if (['menu-quick', 'menu-start', 'menu-continue'].includes(action.type)) enterGameScreen();
     const before = shell;
     try {
       shell = updateShell(shell, action);

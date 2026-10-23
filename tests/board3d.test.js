@@ -2,11 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as R from '../src/rules/index.js';
 import { initModel, interactions, unitKey, update } from '../src/ui/controller.js';
-import { boardLayout3d, STACK_OFFSET, TILE_TOP, unitPlacements } from '../src/ui/board3d/layout3d.js';
+import { boardLayout3d, CARD, DECK, STACK_OFFSET, TILE_TOP, TRAY_TOP, unitPlacements } from '../src/ui/board3d/layout3d.js';
+import { allowed } from '../src/ui/board3d/mount.js';
 import { createBoardScene, TIMING } from '../src/ui/board3d/scene.js';
 import { gameWith } from './helpers.js';
 
-function sceneFor(model, size = [400, 300]) {
+const G = R.geometry(R.DEFAULT_CONFIG);
+
+function sceneFor(model, size = [844, 390]) {
   const board = createBoardScene(model.game.config);
   board.resize(...size);
   board.sync(model, interactions(model), { animate: false, now: 0 });
@@ -21,16 +24,20 @@ function step(board, model, action, now) {
   return next;
 }
 
+const pickAt = (board, target) => {
+  const p = board.screenOf(target);
+  return board.pick(p.x, p.y);
+};
+
 test('3D layout: one tile per board cell, player 0 nearest +z, shared lane in the middle', () => {
   const layout = boardLayout3d();
-  const g = R.geometry(R.DEFAULT_CONFIG);
-  assert.equal(layout.cells.length, g.cellCount);
+  assert.equal(layout.cells.length, G.cellCount);
   const spots = new Set(layout.cells.map((c) => `${c.x.toFixed(3)},${c.z.toFixed(3)}`));
   assert.equal(spots.size, layout.cells.length, 'no two cells overlap');
-  for (let pos = 1; pos <= g.pathLength; pos += 1) {
-    const c0 = layout.byKey.get(g.cellId(0, pos));
-    const c1 = layout.byKey.get(g.cellId(1, pos));
-    if (g.isShared(pos)) {
+  for (let pos = 1; pos <= G.pathLength; pos += 1) {
+    const c0 = layout.byKey.get(G.cellId(0, pos));
+    const c1 = layout.byKey.get(G.cellId(1, pos));
+    if (G.isShared(pos)) {
       assert.equal(c0, c1);
       assert.equal(c0.z, 0);
     } else {
@@ -40,80 +47,131 @@ test('3D layout: one tile per board cell, player 0 nearest +z, shared lane in th
   }
 });
 
-test('3D layout: two units on a cell stand side by side; home and ascended are off the board', () => {
-  const game = gameWith({ 'p0-s1': 2, 'p0-s2': 2, 'p0-s3': 15 });
+test('3D layout: home and ascended trays sit beyond the first and last cells; cards lie between them', () => {
+  const layout = boardLayout3d();
+  for (const p of [0, 1]) {
+    const side = layout.sides[p];
+    const first = layout.byKey.get(G.cellId(p, 1));
+    const last = layout.byKey.get(G.cellId(p, G.pathLength));
+    const home = layout.trays.get(`home:${p}`);
+    const asc = layout.trays.get(`asc:${p}`);
+    assert.equal(home.x, first.x);
+    assert.equal(asc.x, last.x);
+    assert.ok(Math.sign(home.z) === Math.sign(first.z) && Math.abs(home.z) > Math.abs(first.z) + 1, 'beyond the lane');
+    const left = home.x + home.w / 2;
+    const right = asc.x - asc.w / 2;
+    assert.ok(side.deck.x - DECK.w / 2 >= left, 'deck clear of the home tray');
+    assert.ok(side.power.x + CARD.w / 2 <= right, 'power clear of the ascended tray');
+    assert.ok(side.drawn.x - CARD.w / 2 > side.deck.x + DECK.w / 2, 'drawn card right of the deck');
+    assert.ok(side.discard.right < home.x - home.w / 2, 'discard fan left of the home tray');
+  }
+});
+
+test('3D layout: two units on a cell stand side by side; home and ascended units fill their trays', () => {
+  const game = gameWith({ 'p0-s1': 2, 'p0-s2': 2, 'p0-s3': 15, 'p0-s4': 15 });
   const places = unitPlacements(game);
   const a = places.get('p0-s1');
   const b = places.get('p0-s2');
   assert.equal(a.key, b.key);
+  assert.equal(a.y, TILE_TOP);
   assert.ok(Math.abs(Math.abs(a.x - b.x) - 2 * STACK_OFFSET) < 1e-9);
-  assert.equal(places.get('p0-s3').onBoard, false);
-  assert.equal(places.get('p0-s3').key, 'asc:0');
-  assert.equal(places.get('p1-s1').key, 'home:1');
+  assert.equal(places.get('p0-s3').where, 'asc');
+  assert.equal(places.get('p0-s3').y, TRAY_TOP);
+  const home = [...places.values()].filter((p) => p.key === 'home:1');
+  assert.equal(home.length, 6);
+  assert.equal(new Set(home.map((p) => `${p.x},${p.z}`)).size, 6, 'each unit has its own spot');
+  assert.equal(places.get('p1-c1').slot, 5, 'the commander after the soldiers');
 });
 
-test('tapping the centre of any cell picks that cell, for either player', () => {
+test('tapping any cell or tray picks it, for either player; your own lane is at the bottom', () => {
   for (const viewer of [0, 1]) {
     const model = initModel(gameWith({}, { firstPlayer: viewer }));
     const board = sceneFor(model);
     assert.equal(board.azimuth, viewer === 1 ? Math.PI : 0);
-    for (const cell of board.layout.cells) {
-      const p = board.cellScreen(cell.key);
-      assert.ok(Math.abs(p.x) < 1 && Math.abs(p.y) < 1, `${cell.key} is on screen`);
-      assert.equal(board.pick(p.x, p.y), cell.key);
+    const keys = [...board.layout.cells.map((c) => c.key), ...board.layout.trays.keys()];
+    for (const key of keys) {
+      const p = board.screenOf(key);
+      assert.ok(Math.abs(p.x) < 1 && Math.abs(p.y) < 1, `${key} is on screen`);
+      // Trays are full of pieces at the start: either the tray or one of its pieces answers.
+      assert.deepEqual(board.pick(p.x, p.y), { type: 'tap', key });
     }
-    // The viewer's own lane is at the bottom of the screen.
-    const g = R.geometry(R.DEFAULT_CONFIG);
-    const mine = board.cellScreen(g.cellId(viewer, 1));
-    const theirs = board.cellScreen(g.cellId(R.otherPlayer(viewer), 1));
+    const mine = board.screenOf(G.cellId(viewer, 1));
+    const theirs = board.screenOf(G.cellId(R.otherPlayer(viewer), 1));
     assert.ok(mine.y < theirs.y);
+  }
+});
+
+test('the whole table fits in portrait too', () => {
+  const model = initModel(gameWith({}));
+  const board = sceneFor(model, [390, 844]);
+  for (const key of [...board.layout.cells.map((c) => c.key), ...board.layout.trays.keys()]) {
+    const p = board.screenOf(key);
+    assert.ok(Math.abs(p.x) < 1 && Math.abs(p.y) < 1, `${key} is on screen`);
   }
 });
 
 test('tapping a piece picks the cell it stands on', () => {
   const model = initModel(gameWith({ 'p0-s1': 6 }));
   const board = sceneFor(model);
-  const at = board.unitWorld('p0-s1');
-  // Aim at the piece's head, which hides part of the cell behind it.
-  const target = at.clone();
-  target.y += 0.42;
+  const target = board.unitWorld('p0-s1');
+  target.y += 0.42; // aim at the head, which hides part of the cell behind it
   const p = target.project(board.camera);
-  assert.equal(board.pick(p.x, p.y), unitKey(model.game, R.getUnit(model.game, 'p0-s1')));
+  assert.deepEqual(board.pick(p.x, p.y), { type: 'tap', key: unitKey(model.game, R.getUnit(model.game, 'p0-s1')) });
 });
 
-test('a move hops between cells, then the captured unit leaves after the attacker lands', () => {
+test('tapping your deck draws; the card flips over on its way to the drawn spot', () => {
+  let model = initModel(gameWith({}));
+  const board = sceneFor(model);
+  const ix = interactions(model);
+  const action = pickAt(board, board.parts.sides[0].top.front);
+  assert.deepEqual(action, { type: 'draw', player: 0 });
+  assert.ok(allowed(action, model, ix));
+  assert.ok(!allowed(pickAt(board, board.parts.sides[1].top.front), model, ix), "not the other player's deck");
+
+  model = step(board, model, { type: 'draw' }, 1000);
+  const card = board.parts.sides[0].drawn;
+  assert.ok(card.yaw.visible);
+  board.tick(1000 + TIMING.draw / 2);
+  assert.ok(card.flip.rotation.z > 0.1, 'still turning over');
+  board.tick(1000 + TIMING.draw + 1);
+  assert.equal(card.flip.rotation.z, 0, 'face up');
+});
+
+test('a move hops between cells; the captured unit hops back to its home tray after the attacker lands', () => {
   let model = initModel(gameWith({ 'p0-s1': 6, 'p1-s1': 8 }, { drawn: 2 }));
   const board = sceneFor(model);
-  const g = R.geometry(R.DEFAULT_CONFIG);
   const from = board.unitWorld('p0-s1');
-  model = step(board, model, { type: 'tap', key: g.cellId(0, 6) }, 0);
-  assert.equal(interactions(model).dest, g.cellId(0, 8));
+  model = step(board, model, { type: 'tap', key: G.cellId(0, 6) }, 0);
+  assert.equal(interactions(model).dest, G.cellId(0, 8));
   board.tick(0);
+  const victimAt = board.unitWorld('p1-s1');
   model = step(board, model, { type: 'confirm' }, 1000);
   assert.equal(R.getUnit(model.game, 'p1-s1').pos, R.HOME);
 
-  board.tick(1000 + TIMING.hopBase / 2);
+  const hop = TIMING.hopBase + TIMING.hopPerCell; // two cells
+  board.tick(1000 + hop / 2);
   const mid = board.unitWorld('p0-s1');
   assert.ok(mid.y > TILE_TOP + 0.3, 'in the air halfway');
   assert.ok(mid.x !== from.x, 'on its way');
-  assert.ok(board.unitWorld('p1-s1'), 'the victim is still there while the attacker hops');
+  assert.ok(board.unitWorld('p1-s1').distanceTo(victimAt) < 1e-6, 'the victim waits while the attacker hops');
 
-  const hop = TIMING.hopBase + TIMING.hopPerCell; // two cells
   board.tick(1000 + hop + 1);
+  const dest = board.layout.byKey.get(G.cellId(0, 8));
   const landed = board.unitWorld('p0-s1');
-  const dest = board.layout.byKey.get(g.cellId(0, 8));
   assert.ok(Math.abs(landed.x - dest.x) < 1e-6 && Math.abs(landed.z - dest.z) < 1e-6);
 
   board.tick(1000 + hop + TIMING.capture + 2);
-  assert.equal(board.unitWorld('p1-s1'), null, 'gone from the board');
+  const home = unitPlacements(model.game).get('p1-s1');
+  const now = board.unitWorld('p1-s1');
+  assert.ok(Math.abs(now.x - home.x) < 1e-6 && Math.abs(now.z - home.z) < 1e-6, 'back in the home tray');
 });
 
-test('selecting a unit zooms toward it; handing off turns the camera half a circle', () => {
+test('selecting a unit zooms toward it; handing off turns the camera, and the cards turn to face the new player', () => {
   let model = initModel(gameWith({ 'p0-s1': 6 }, { drawn: 2 }));
+  model.game.held[1] = R.POWERS.TOWER;
   const board = sceneFor(model);
   const far = board.distance;
-  const g = R.geometry(R.DEFAULT_CONFIG);
-  model = step(board, model, { type: 'tap', key: g.cellId(0, 6) }, 0);
+  model = step(board, model, { type: 'tap', key: G.cellId(0, 6) }, 0);
   for (let t = 0; t <= 2000; t += 16) board.tick(t);
   assert.ok(board.distance < far * 0.9, 'closer while a unit is selected');
 
@@ -126,11 +184,35 @@ test('selecting a unit zooms toward it; handing off turns the camera half a circ
   assert.ok(board.azimuth > 0.5 && board.azimuth < Math.PI - 0.5, 'halfway round');
   board.tick(4000 + TIMING.spin + 1);
   assert.ok(!board.spinning);
-  assert.ok(Math.abs(Math.cos(board.azimuth) + 1) < 1e-9, 'now facing from player 1\'s side');
+  assert.ok(Math.abs(Math.cos(board.azimuth) + 1) < 1e-9, "now facing from player 1's side");
+  for (const side of board.parts.sides) {
+    assert.equal(side.power.yaw.rotation.y, board.azimuth, 'cards face the player at the table');
+  }
+});
+
+test('drafting: the two power cards rise in front of the camera; tapping one keeps it', () => {
+  let model = initModel(gameWith({}, { drawn: R.JOKER }));
+  assert.equal(interactions(model).phase, 'draft');
+  const board = createBoardScene(model.game.config);
+  board.resize(844, 390);
+  board.sync(model, interactions(model), { animate: true, now: 0 });
+  board.sync(model, interactions(model), { animate: true, now: 0 });
+  board.tick(TIMING.rise + 1);
+  const [a, b] = board.parts.draftCards;
+  assert.ok(a.visible && b.visible);
+  const pa = board.screenOf(a);
+  const pb = board.screenOf(b);
+  assert.ok(Math.abs(pa.y) < 0.3 && pa.x < 0 && pb.x > 0, 'side by side in the middle of the view');
+  const action = board.pick(pb.x, pb.y);
+  assert.deepEqual(action, { type: 'keep', index: 1 });
+  assert.ok(allowed(action, model, interactions(model)));
+  model = update(model, action);
+  board.sync(model, interactions(model), { animate: true, now: 1000 });
+  assert.ok(!a.visible && !b.visible);
 });
 
 test('a scene can be thrown away and rebuilt for another board size', () => {
-  const short = R.createGame({ seed: 3, config: { board: { startLane: 3, middleLane: 8, endLane: 2, towers: [7, 13], campsites: [5] } } });
+  const short = R.createGame({ seed: 3, config: { soldiers: 4, board: { startLane: 3, middleLane: 8, endLane: 2, towers: [7, 13], campsites: [5] } } });
   const board = sceneFor(initModel(short));
   assert.equal(board.layout.cells.length, R.geometry(short.config).cellCount);
   board.dispose();

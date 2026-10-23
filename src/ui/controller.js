@@ -8,6 +8,7 @@
 //   joker,       null | 'draft' — choice made after drawing a joker
 //   using,       true while picking targets for the held power
 //   confirmNew,  showing the "start a new game?" prompt
+//   menuOpen,    the in-game menu is open (3D layout)
 //   events,      what the last action did, for the status line
 // }
 
@@ -18,7 +19,7 @@ export function initModel(game = R.createGame()) {
 }
 
 function freshUi(viewer, events = []) {
-  return { viewer, pick: null, joker: null, using: false, confirmNew: false, events };
+  return { viewer, pick: null, joker: null, using: false, confirmNew: false, menuOpen: false, events };
 }
 
 /** Where a unit is: a board cell id, or `home:<player>` / `asc:<player>`. */
@@ -254,6 +255,8 @@ export function update(m, action) {
   const ui = (patch) => ({ ...m, ui: { ...m.ui, ...patch } });
 
   switch (action.type) {
+    case 'menu':
+      return ui({ menuOpen: !m.ui.menuOpen, confirmNew: false });
     case 'new':
       return ui({ confirmNew: true });
     case 'new-cancel':

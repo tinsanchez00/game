@@ -89,3 +89,31 @@ test('leaving a game goes to the start screen, where it can be continued', () =>
   assert.equal(s.screen, 'game');
   assert.equal(s.play.ui.confirmNew, false, 'the restart prompt is closed');
 });
+
+test('3D game screen: menu button, status pill and turn buttons over the table', () => {
+  let s = act(initShell(), 'menu-quick');
+  let html = viewShell(s);
+  assert.match(html, /data-board3d/);
+  assert.match(html, /class="pill"/);
+  assert.match(html, /data-action="menu"/);
+  assert.doesNotMatch(html, /class="panel/, 'no flat panels: cards are on the table');
+  assert.doesNotMatch(html, /id="game-menu"/, 'menu starts closed');
+  s = act(s, 'menu');
+  html = viewShell(s);
+  assert.match(html, /id="game-menu"/);
+  assert.match(html, /data-action="new"/);
+  s = act(s, 'new');
+  assert.match(viewShell(s), /data-action="new-confirm"/);
+  s = act(s, 'menu');
+  assert.doesNotMatch(viewShell(s), /id="game-menu"/);
+});
+
+test('3D game screen: the draft is picked on the table, not with buttons', () => {
+  const game = R.createGame({ seed: 7 });
+  let s = updateShell(initShell(), { type: 'menu-quick' }, { newGame: () => ({ ...game, drawn: R.JOKER }) });
+  assert.match(viewShell(s), /Keep one power/);
+  assert.doesNotMatch(viewShell(s), /data-action="keep"/);
+  s = act(s, 'menu-back');
+  s = { ...s, board: 'flat', screen: 'game' };
+  assert.match(viewShell(s), /data-action="keep"/, 'the flat board still offers buttons');
+});

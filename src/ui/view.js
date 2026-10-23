@@ -71,16 +71,6 @@ function jumpLines(slots, columns, ix) {
   }).join('');
 }
 
-/** The 3D board: an empty host the app fills with its canvas (board3d/). */
-function board3dHost(g, viewer) {
-  const other = R.otherPlayer(viewer);
-  return `<section class="board-area three" aria-label="Board">
-    <span class="lane">${esc(TEXT.lane(team(other)))}</span>
-    <div class="board3d-host" data-board3d></div>
-    <span class="lane">${esc(TEXT.lane(team(viewer)))}</span>
-  </section>`;
-}
-
 function board(g, viewer, ix, victims, victimKeys) {
   const other = R.otherPlayer(viewer);
   const slots = boardSlots(viewer, g.config);
@@ -214,8 +204,8 @@ function optionChips(ix) {
   return `<div class="buttons">${chips.join('')}</div>`;
 }
 
-function eventsLine(m) {
-  const lines = m.ui.events.map((e) => {
+function eventsText(m) {
+  return m.ui.events.map((e) => {
     const t = team(e.player);
     if (e.type === 'lost') return TEXT.event.lost(t, e.count);
     if (e.type === 'ascended') return TEXT.event.ascended(t, e.count);
@@ -226,8 +216,12 @@ function eventsLine(m) {
     if (e.type === 'jumped') return TEXT.event.jumped(t);
     if (e.type === 'extraTurn') return TEXT.event.extraTurn(t);
     return '';
-  }).filter(Boolean);
-  return lines.length ? `<p class="events">${esc(lines.join(' · '))}</p>` : '';
+  }).filter(Boolean).join(' · ');
+}
+
+function eventsLine(m) {
+  const text = eventsText(m);
+  return text ? `<p class="events">${esc(text)}</p>` : '';
 }
 
 /** Which part of a turn the drawn card belongs to (see labels.js). */
@@ -237,7 +231,11 @@ function stepOf(g) {
   return g.hanged?.stage ?? null;
 }
 
-function actions(m, ix) {
+/**
+ * The status line and controls for the current phase: { status, controls }.
+ * cards3d: the draft cards are drawn in the 3D view, not as buttons.
+ */
+function turnControls(m, ix, { cards3d = false } = {}) {
   const g = m.game;
   const S = TEXT.status;
   const step = stepOf(g);
@@ -273,6 +271,7 @@ function actions(m, ix) {
       break;
     case 'draft': {
       status = S.draft(step);
+      if (cards3d) break;
       const cards = R.draftOptions(g).map((id, i) =>
         `<button type="button" class="card face power choice" data-action="keep" data-index="${i}" aria-label="Keep ${esc(powerName(id))}">${powerCard(id)}</button>`);
       controls = `<div class="draft">${cards.join('')}</div>`;
@@ -302,6 +301,11 @@ function actions(m, ix) {
     controls += `<div class="buttons">${btn('use-power', label)}</div>`;
   }
 
+  return { status, controls };
+}
+
+function actions(m, ix) {
+  const { status, controls } = turnControls(m, ix);
   return `<div class="actions" aria-live="polite">
     ${eventsLine(m)}
     ${status ? `<p class="status">${esc(status)}</p>` : ''}
@@ -327,16 +331,51 @@ function winOverlay(g) {
   </div>`;
 }
 
-/** `board`: 'flat' (HTML grid) or '3d' (a host for the canvas). */
+function menuIcon() {
+  return '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"></path></svg>';
+}
+
+/**
+ * The 3D page: a full-screen stage the app fills with its canvas (board3d/),
+ * and a flat overlay — menu button, status pill and the turn's buttons.
+ */
+function view3d(m, ix) {
+  const g = m.game;
+  const { status, controls } = turnControls(m, ix, { cards3d: true });
+  const events = eventsText(m);
+  const open = m.ui.menuOpen === true;
+  const restart = m.ui.confirmNew
+    ? `<span class="restart">${esc(TEXT.restartPrompt)} ${btn('new-confirm', TEXT.yes, { primary: true })}${btn('new-cancel', TEXT.no)}</span>`
+    : btn('new', TEXT.newGame);
+  const menu = open
+    ? `<div class="menu-pop" id="game-menu"><p class="menu-note">${esc(TEXT.testMode)}</p>${restart}</div>`
+    : '';
+  return `<div class="app3d">
+    <div class="stage" data-board3d role="img" aria-label="${esc(TEXT.boardLabel)}"></div>
+    <header class="hud-top">
+      <button type="button" class="icon-btn hud-menu" data-action="menu" aria-label="${esc(TEXT.menu)}" aria-expanded="${open}" aria-controls="game-menu">${menuIcon()}</button>
+      <div class="pill" aria-live="polite">
+        <span class="pill-line"><span class="pill-team">${esc(team(g.current))}</span>${status ? `<span class="pill-status">${esc(status)}</span>` : ''}</span>
+        ${events ? `<span class="pill-events">${esc(events)}</span>` : ''}
+      </div>
+    </header>
+    ${menu}
+    <div class="hud-actions">${controls}</div>
+    ${ix.phase === 'won' ? winOverlay(g) : ''}
+  </div>`;
+}
+
+/** `board`: 'flat' (HTML grid and panels) or '3d' (a full-screen 3D table). */
 export function view(m, { board: style = 'flat' } = {}) {
   const g = m.game;
   const ix = interactions(m);
+  if (style === '3d') return view3d(m, ix);
   const victims = new Set(ix.victims);
   const victimKeys = new Set(ix.victims.map((id) => unitKey(g, R.getUnit(g, id))));
   return `<div class="app">
     ${topBar(m)}
     ${opponentPanel(g, R.otherPlayer(m.ui.viewer))}
-    ${style === '3d' ? board3dHost(g, m.ui.viewer) : board(g, m.ui.viewer, ix, victims, victimKeys)}
+    ${board(g, m.ui.viewer, ix, victims, victimKeys)}
     ${playerPanel(m, ix, victims, victimKeys)}
     ${ix.phase === 'won' ? winOverlay(g) : ''}
   </div>`;
