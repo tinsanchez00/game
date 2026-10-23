@@ -1,53 +1,93 @@
-// Power effects. Each effect takes a state and returns new units (and flags);
+// Power effects. Each effect takes a state and returns new units (and stars);
 // turn bookkeeping lives in turn.js.
+//
+// Every power has two sides: upright and upside down (`upsideDown: true`).
 
 import { HOME, geometry } from './board.js';
 import { POWERS } from './cards.js';
-import { sendHome } from './moves.js';
-import { countDeaths, getUnit } from './state.js';
+import { legalMoves, occupancy, sendHome, stepTarget, stepUnit } from './moves.js';
+import { countDeaths, getUnit, otherPlayer } from './state.js';
 
-function middleUnits(state, player = null) {
+function onBoard(state, u) {
+  return geometry(state.config).isOnBoard(u.pos);
+}
+
+// --- The Lovers: what a unit sees --------------------------------------------------
+
+/**
+ * Path positions unit `unitId` can jump to: the nearest ally it sees in each
+ * direction along its own path (the first unit met must be its own team's,
+ * and that cell must have room), keeping only the nearest (both when tied).
+ */
+export function loversTargets(state, unitId, occ = occupancy(state)) {
   const g = geometry(state.config);
-  return state.units.filter(
-    (u) => g.isShared(u.pos) && (player === null || u.player === player),
-  );
+  const unit = getUnit(state, unitId);
+  if (!g.isOnBoard(unit.pos)) return [];
+  const me = unit.player;
+  const found = [];
+  for (const dir of [1, -1]) {
+    for (let q = unit.pos + dir; q >= 1 && q <= g.pathLength; q += dir) {
+      const c = g.cellIndex(me, q);
+      const mine = occ[me][c];
+      const theirs = occ[otherPlayer(me)][c];
+      if (mine + theirs === 0) continue;
+      if (theirs === 0 && mine < state.config.maxPerCell) found.push(q);
+      break;
+    }
+  }
+  if (found.length === 0) return [];
+  const dist = (q) => Math.abs(q - unit.pos);
+  const best = Math.min(...found.map(dist));
+  return found.filter((q) => dist(q) === best);
 }
 
 // --- choices -------------------------------------------------------------
 
-function loversChoices(state, player) {
-  if (state.config.maxPerCell < 2) return [];
-  const mine = middleUnits(state, player);
-  const all = middleUnits(state);
-  const choices = [];
-  for (const unit of mine) {
-    for (const partner of mine) {
-      if (partner.pos === unit.pos) continue;
-      if (all.filter((u) => u.pos === partner.pos).length !== 1) continue;
-      choices.push({ unit: unit.id, target: partner.id });
-    }
-  }
-  return choices;
+function towerChoices(state) {
+  const g = geometry(state.config);
+  const occ = occupancy(state);
+  return state.units
+    .filter((u) => g.isOnBoard(u.pos) && g.isTower(u.pos) && stepTarget(state, u.id, occ) !== null)
+    .map((u) => ({ unit: u.id }));
 }
 
-function devilChoices(state, player) {
-  return middleUnits(state, player).map((u) => ({ unit: u.id }));
+function loversChoices(state, player) {
+  const occ = occupancy(state);
+  const out = [];
+  for (const u of state.units) {
+    if (u.player !== player) continue;
+    for (const to of loversTargets(state, u.id, occ)) out.push({ unit: u.id, to });
+  }
+  return out;
+}
+
+/** Number cards in `player`'s discard pile with a Hermit move onto an ally, as [{ card }]. */
+function hermitPileChoices(state, player) {
+  const numbers = [...new Set(state.moveDecks[player].discard.filter((c) => Number.isInteger(c)))].sort((a, b) => a - b);
+  const occ = occupancy(state);
+  const mode = { backward: false, only: null, hermit: true };
+  return numbers.filter((n) => legalMoves(state, player, n, occ, mode).length > 0).map((card) => ({ card }));
 }
 
 /**
- * Every valid argument object for playing `power` as `player`.
- * An empty list means the power can't be played right now.
+ * Every valid argument object for playing `power` as `player` (upside down
+ * when `upsideDown`). An empty list means the power has no target right now.
  */
-export function powerChoices(state, player, power) {
+export function powerChoices(state, player, power, { upsideDown = false } = {}) {
+  const g = geometry(state.config);
   switch (power) {
-    case POWERS.LOVERS:
-      return state.config.rules.loversLine ? [] : loversChoices(state, player);
-    case POWERS.DEVIL:
-      return devilChoices(state, player);
-    case POWERS.HANGED_MAN:
     case POWERS.TOWER:
-    case POWERS.HERMIT:
+      return upsideDown ? [{}] : towerChoices(state);
+    case POWERS.LOVERS:
+      return loversChoices(state, upsideDown ? otherPlayer(player) : player);
+    case POWERS.DEVIL:
+      return upsideDown
+        ? state.units.filter((u) => g.isShared(u.pos)).map((u) => ({ unit: u.id }))
+        : state.units.filter((u) => u.player === player && onBoard(state, u)).map((u) => ({ unit: u.id }));
+    case POWERS.HANGED_MAN:
       return [{}];
+    case POWERS.HERMIT:
+      return upsideDown ? hermitPileChoices(state, player) : [{}];
     default:
       throw new Error(`powerChoices: unknown power ${power}`);
   }
@@ -60,58 +100,71 @@ function sameChoice(a, b) {
 
 // --- effects -------------------------------------------------------------
 
-function lovers(state, { unit, target }) {
-  const pos = getUnit(state, target).pos;
-  return {
-    ...state,
-    units: state.units.map((u) => (u.id === unit ? { ...u, pos } : u)),
-  };
+function jump(state, { unit, to }) {
+  return { ...state, units: state.units.map((u) => (u.id === unit ? { ...u, pos: to } : u)) };
 }
 
-function devil(state, { unit }) {
+/** Upright Devil: units on the cells just before and after `unit` (and on its own cell) die. */
+function devilUpright(state, { unit }) {
   const g = geometry(state.config);
-  const center = g.middleIndex(getUnit(state, unit).pos);
+  const devil = getUnit(state, unit);
+  const cells = new Set(
+    [devil.pos - 1, devil.pos, devil.pos + 1]
+      .filter((q) => g.isOnBoard(q))
+      .map((q) => g.cellIndex(devil.player, q)),
+  );
+  const units = sendHome(state.units, (u) => u.id !== unit && onBoard(state, u) && cells.has(g.cellIndex(u.player, u.pos)));
+  return countDeaths(state, { ...state, units });
+}
+
+/**
+ * Upside-down Devil (a unit in the middle lane): every unit on the board
+ * moves one cell toward it along its own path; reaching it, or sharing its
+ * cell, kills.
+ */
+function devilUpsideDown(state, { unit }) {
+  const g = geometry(state.config);
+  const c = getUnit(state, unit).pos; // a shared cell: the same path position for both teams
   const units = state.units.map((u) => {
-    if (u.id === unit) return u;
-    const i = g.middleIndex(u.pos);
-    if (i === null) return u;
-    if (i === center) return { ...u, pos: HOME };
-    const next = i + Math.sign(center - i);
-    if (next === center) return { ...u, pos: HOME };
-    return { ...u, pos: g.posFromMiddleIndex(next) };
+    if (u.id === unit || !g.isOnBoard(u.pos)) return u;
+    if (u.pos === c) return { ...u, pos: HOME };
+    const next = u.pos + Math.sign(c - u.pos);
+    return next === c ? { ...u, pos: HOME } : { ...u, pos: next };
   });
-  return { ...state, units };
+  return countDeaths(state, { ...state, units });
 }
 
-function tower(state) {
+function towerDestroy(state) {
   const g = geometry(state.config);
-  return { ...state, units: sendHome(state.units, (u) => g.isTower(u.pos)) };
+  const units = sendHome(state.units, (u) => g.isOnBoard(u.pos) && g.isTower(u.pos));
+  return countDeaths(state, { ...state, units });
 }
 
 /**
  * Applies `power` for `player` with `args` (one of powerChoices). Returns the
- * new state; does not touch turn order, held powers or the power deck.
- * With no valid target, `args` must be {} and nothing happens.
- * The Hanged Man changes no units here: turn.js makes the turn's card move
- * backward.
+ * new state; does not touch turn order, held powers, stars spent or the
+ * power deck. With no valid target, `args` must be {} and nothing happens.
+ * The Hanged Man and the Hermit change no units here: turn.js resolves the
+ * turn's card for them.
  */
-export function applyPower(state, player, power, args = {}) {
-  const valid = powerChoices(state, player, power);
+export function applyPower(state, player, power, args = {}, { upsideDown = false } = {}) {
+  const valid = powerChoices(state, player, power, { upsideDown });
   const allowed = valid.length > 0 ? valid : [{}]; // nothing to target: no effect
   if (!allowed.some((c) => sameChoice(c, args))) {
     throw new Error(`applyPower: invalid choice for ${power}`);
   }
   switch (power) {
-    case POWERS.HANGED_MAN:
-      return state;
-    case POWERS.LOVERS:
-      return args.unit && !state.config.rules.loversLine ? lovers(state, args) : state;
-    case POWERS.DEVIL:
-      return args.unit ? countDeaths(state, devil(state, args)) : state;
     case POWERS.TOWER:
-      return countDeaths(state, tower(state));
+      if (upsideDown) return towerDestroy(state);
+      return args.unit ? stepUnit(state, args.unit) : state;
+    case POWERS.LOVERS:
+      return args.unit ? jump(state, args) : state;
+    case POWERS.DEVIL:
+      if (!args.unit) return state;
+      return upsideDown ? devilUpsideDown(state, args) : devilUpright(state, args);
+    case POWERS.HANGED_MAN:
     case POWERS.HERMIT:
-      return state; // free power: turn.js resolves the card as a move onto an ally
+      return state;
     default:
       throw new Error(`applyPower: unknown power ${power}`);
   }

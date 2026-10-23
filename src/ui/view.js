@@ -225,7 +225,6 @@ function eventsText(m) {
     if (e.type === 'drafted') return TEXT.event.drafted(t, powerName(e.power));
     if (e.type === 'played') return TEXT.event.played(t, powerName(e.power));
     if (e.type === 'flipped') return TEXT.event.flipped(t, powerName(e.power));
-    if (e.type === 'jumped') return TEXT.event.jumped(t);
     if (e.type === 'extraTurn') return TEXT.event.extraTurn(t);
     return '';
   }).filter(Boolean).join(' · ');
@@ -239,9 +238,8 @@ function eventsLine(m) {
 /** Which part of a turn the drawn card belongs to (see labels.js). */
 function stepOf(g) {
   if (g.campsite) return 'campsite';
-  if (g.lovers) return 'lovers';
   if (g.hermit) return 'hermit';
-  if (g.upsideDown?.stage === 'step') return 'upsideDown';
+  if (g.hanged?.enemy) return 'backEnemy';
   return g.hanged?.stage ?? null;
 }
 
@@ -262,7 +260,7 @@ function turnControls(m, ix, { cards3d = false } = {}) {
       controls = `<div class="buttons">${btn('handoff', S.startTurn(team(g.current)), { primary: true })}</div>`;
       break;
     case 'draw':
-      status = step === 'forward' ? S.drawForward : S.draw(team(g.current));
+      status = S.draw(team(g.current));
       break;
     case 'move':
       status = ix.selected && !ix.chosen ? S.chooseUnit
@@ -298,23 +296,30 @@ function turnControls(m, ix, { cards3d = false } = {}) {
       // In 3D the cards and their captions are tapped; only Back stays a button.
       controls = cards3d
         ? `<div class="buttons side-back">${btn('cancel', T.back)}</div>`
-        : `<div class="buttons side-pick">${choice('side-upright', T.upright, T.uprightNote(ix.power), !ix.canUpright)}${choice('side-upside', T.upsideDown, T.upsideNote(ix.cost), !ix.canUpsideDown)}${btn('cancel', T.back)}</div>`;
+        : `<div class="buttons side-pick">${choice('side-upright', T.upright, T.uprightNote(ix.power), !ix.canUpright)}${choice('side-upside', T.upsideDown, T.upsideNote(ix.cost, ix.power), !ix.canUpsideDown)}${btn('cancel', T.back)}</div>`;
       break;
     }
     case R.POWERS.LOVERS:
-      status = ix.options.length ? S.chooseUnit : m.ui.pick?.unit ? S.loversTarget : S.loversPick;
+      status = ix.options.length ? S.chooseUnit : m.ui.pick?.unit ? S.loversTarget : ix.upside ? S.loversPickEnemy : S.loversPick;
       controls = optionChips(ix) + `<div class="buttons">${btn('cancel', TEXT.cancel)}</div>`;
       break;
-    case 'loversJump':
-      status = ix.options.length ? S.chooseUnit : ix.canConfirm ? S.loversJump : S.loversPickJumper;
+    case R.POWERS.TOWER:
+      status = ix.options.length && !ix.canConfirm ? S.chooseUnit : ix.canConfirm ? S.towerConfirm : S.towerPick;
       controls = optionChips(ix)
-        + `<div class="buttons">${btn('confirm', TEXT.jump, { primary: true, disabled: !ix.canConfirm })}${btn('stay', TEXT.stay)}</div>`;
+        + `<div class="buttons">${ix.canConfirm ? btn('confirm', TEXT.stepForward, { primary: true }) : ''}${btn('cancel', TEXT.cancel)}</div>`;
       break;
     case R.POWERS.DEVIL:
-      status = ix.options.length && !ix.canConfirm ? S.chooseUnit : ix.canConfirm ? S.devilConfirm : S.devilPick;
+      status = ix.options.length && !ix.canConfirm ? S.chooseUnit : ix.canConfirm ? S.devilConfirm : ix.upside ? S.devilPickAny : S.devilPick;
       controls = optionChips(ix)
         + `<div class="buttons">${ix.canConfirm ? btn('confirm', TEXT.unleash, { primary: true }) : ''}${btn('cancel', TEXT.cancel)}</div>`;
       break;
+    case R.POWERS.HERMIT: {
+      status = S.hermitPile;
+      // In 3D the numbers rise like the draft; the flat board lists them as buttons.
+      const nums = cards3d ? '' : `<div class="buttons">${ix.cards.map((n, i) => btn('keep', String(n), { primary: true, extra: ` data-index="${i}"` })).join('')}</div>`;
+      controls = nums + `<div class="buttons">${btn('cancel', TEXT.cancel)}</div>`;
+      break;
+    }
     default:
       break;
   }

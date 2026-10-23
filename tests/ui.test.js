@@ -88,13 +88,12 @@ function botAction(m, pick, used) {
       if (ix.options.length) return { type: 'option', value: any(ix.options) };
       return { type: 'tap', key: any(ix.tappable) };
     case R.POWERS.DEVIL:
+    case R.POWERS.TOWER:
       if (ix.canConfirm) return { type: 'confirm' };
       if (ix.options.length) return { type: 'option', value: any(ix.options) };
       return { type: 'tap', key: any(ix.tappable) };
-    case 'loversJump':
-      if (ix.canConfirm) return pick(3) === 0 ? { type: 'stay' } : { type: 'confirm' };
-      if (ix.options.length) return { type: 'option', value: any(ix.options) };
-      return { type: 'tap', key: any(ix.tappable) };
+    case R.POWERS.HERMIT:
+      return { type: 'keep', index: pick(ix.cards.length) };
     default:
       throw new Error(`bot: unexpected phase ${ix.phase}`);
   }
@@ -119,9 +118,7 @@ test('bots can play complete games through the screen without errors', () => {
   const used = new Set();
   for (let seed = 1; seed <= 30; seed += 1) {
     const pick = makeRandom(seed * 7919);
-    // Every third game uses the earlier, pairing Lovers.
-    // Every third game uses the earlier, pairing Lovers; every fourth the forward-card Hanged Man.
-    const config = { powerTiming: seed % 2 ? 'afterDraw' : 'beforeDraw', rules: { loversLine: seed % 3 !== 0, hangedTurn: seed % 4 !== 0 } };
+    const config = { powerTiming: seed % 2 ? 'afterDraw' : 'beforeDraw' };
     let m = initModel(R.createGame({ seed, config }));
     let steps = 0;
     while (m.game.winner === null) {
@@ -132,8 +129,7 @@ test('bots can play complete games through the screen without errors', () => {
       const action = botAction(m, pick, used);
       seen.add(interactions(m).phase);
       if (m.game.campsite) seen.add('campsite card');
-      if (m.game.hanged?.stage === 'forward') seen.add('hanged forward');
-      if (m.game.upsideDown?.stage === 'step') seen.add('upside-down step');
+      if (m.game.hanged?.enemy) seen.add('enemy back');
       const next = update(m, action);
       assert.notEqual(next, m, `seed ${seed}: action ${JSON.stringify(action)} did nothing`);
       m = next;
@@ -142,7 +138,7 @@ test('bots can play complete games through the screen without errors', () => {
     assert.ok(view(m).includes('overlay'));
     assert.ok(m.game.units.filter((u) => u.player === m.game.winner).every((u) => u.pos === R.ASCENDED));
   }
-  for (const phase of ['handoff', 'draw', 'move', 'stuck', 'joker', 'draft', 'side', 'lovers', 'loversJump', 'devil', 'campsite card', 'hanged forward', 'upside-down step']) {
+  for (const phase of ['handoff', 'draw', 'move', 'stuck', 'joker', 'draft', 'side', 'lovers', 'devil', 'campsite card']) {
     assert.ok(seen.has(phase), `phase ${phase} never came up`);
   }
   for (const power of Object.values(R.POWERS)) assert.ok(used.has(power), `${power} never used`);
@@ -203,17 +199,17 @@ test('The Devil marks the units it would kill before you confirm', () => {
   assert.ok(view(m).includes('data-action="use-power"'));
   m = useUpright(m);
   m = update(m, { type: 'tap', key: 'shared-5' });
-  assert.deepEqual(interactions(m).victims, ['p1-s1']);
+  assert.deepEqual(interactions(m).victims, ['p1-s1'], 'only the unit next to it');
   assert.ok(view(m).includes('doomed'));
   m = update(m, { type: 'confirm' });
   assert.equal(R.getUnit(m.game, 'p1-s1').pos, R.HOME);
-  assert.equal(R.getUnit(m.game, 'p1-s2').pos, 10);
+  assert.equal(R.getUnit(m.game, 'p1-s2').pos, 11);
 });
 
 test('after draw: the screen offers the held power on a number card and on a joker', () => {
   let m = modelWith({ 'p0-s1': 3 }, {
     moveDecks: [{ draw: [2], discard: [] }, { draw: [1], discard: [] }],
-    held: [R.POWERS.TOWER, null],
+    held: [R.POWERS.LOVERS, null],
   });
   assert.ok(!interactions(m).canUsePower, 'not before drawing');
   m = update(m, { type: 'draw' });
@@ -225,19 +221,19 @@ test('after draw: the screen offers the held power on a number card and on a jok
 
   let j = modelWith({}, {
     moveDecks: [{ draw: [R.JOKER], discard: [] }, { draw: [1], discard: [] }],
-    held: [R.POWERS.TOWER, null],
+    held: [R.POWERS.LOVERS, null],
   });
   j = update(j, { type: 'draw' });
   assert.equal(interactions(j).phase, 'joker');
-  assert.ok(view(j).includes('Use The Tower instead'));
+  assert.ok(view(j).includes('Use The Lovers instead'));
 });
 
 test('before draw: the held power is offered instead of drawing', () => {
   const base = R.createGame({ seed: 3, firstPlayer: 0, config: { powerTiming: 'beforeDraw' } });
-  let m = initModel({ ...base, held: [R.POWERS.TOWER, null] });
+  let m = initModel({ ...base, held: [R.POWERS.LOVERS, null] });
   assert.equal(interactions(m).phase, 'draw');
   assert.ok(interactions(m).canUsePower);
-  assert.ok(view(m).includes('Use The Tower'));
+  assert.ok(view(m).includes('Use The Lovers'));
   m = update(m, { type: 'draw' });
   assert.ok(!interactions(m).canUsePower);
 });
@@ -258,29 +254,6 @@ test('The Hanged Man: back with the drawn card, then an extra turn', () => {
   assert.match(view(m), /extra turn/);
   m = update(m, { type: 'draw' });
   assert.ok(interactions(m).tappable.length > 1, 'any unit can move');
-});
-
-test('The Hanged Man (forward-card version): back with the drawn card, then the forward card moves the same unit', () => {
-  let m = modelWith({ 'p0-s1': 11, 'p0-s2': 1 }, {
-    config: { rules: { hangedTurn: false } },
-    moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
-    held: [R.POWERS.HANGED_MAN, null],
-  });
-  m = update(m, { type: 'draw' });
-  m = useUpright(m);
-  assert.equal(interactions(m).phase, 'move');
-  assert.ok(view(m).includes('move a unit 3 back'));
-  m = update(m, { type: 'tap', key: 'shared-8' });
-  m = update(m, { type: 'confirm' });
-  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 8);
-  assert.equal(interactions(m).phase, 'draw');
-  assert.ok(view(m).includes('draw the forward card'));
-  m = update(m, { type: 'draw' });
-  assert.deepEqual(interactions(m).tappable, ['shared-5'], 'only that unit');
-  m = update(m, { type: 'tap', key: 'shared-5' });
-  m = update(m, { type: 'confirm' });
-  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 9);
-  assert.equal(interactions(m).phase, 'handoff');
 });
 
 test('landing on the campsite shows the card from your discard pile and moves that unit again', () => {
@@ -327,29 +300,62 @@ function loversModel(positions, deck = [3, 1]) {
   return useUpright(m);
 }
 
-test('the Lovers: the card moves as usual, then a line, Jump and Stay offer the jump', () => {
+test('the Lovers: pick a unit, then the ally it jumps to; the card is spent', () => {
   let m = loversModel({ 'p0-s1': 4, 'p0-s2': 10 });
-  assert.equal(interactions(m).phase, 'move');
-  assert.match(view(m), /The Lovers · move a unit 3 forward/);
+  assert.equal(interactions(m).phase, R.POWERS.LOVERS);
+  assert.match(view(m), /The Lovers · pick a unit to jump to its nearest ally/);
   m = update(m, { type: 'tap', key: unitKey(m.game, R.getUnit(m.game, 'p0-s1')) });
-  m = update(m, { type: 'confirm' });
   const ix = interactions(m);
-  assert.equal(ix.phase, 'loversJump');
-  assert.equal(ix.lines.length, 1);
-  assert.ok(ix.canConfirm);
-  assert.equal(ix.dest, R.cellId(0, 10));
-  const html = view(m);
-  assert.match(html, /class="jump-line on"/);
-  assert.match(html, /data-action="confirm"[^>]*>Jump</);
-  assert.match(html, /data-action="stay"[^>]*>Stay</);
-  const jumped = update(m, { type: 'confirm' });
-  assert.equal(R.getUnit(jumped.game, 'p0-s1').pos, 10);
-  assert.equal(interactions(jumped).phase, 'handoff');
-  const tapped = update(m, { type: 'tap', key: ix.dest });
-  assert.equal(R.getUnit(tapped.game, 'p0-s1').pos, 10);
-  const stayed = update(m, { type: 'stay' });
-  assert.equal(R.getUnit(stayed.game, 'p0-s1').pos, 7);
-  assert.equal(interactions(stayed).phase, 'handoff');
+  assert.deepEqual(ix.targets, [R.cellId(0, 10)]);
+  m = update(m, { type: 'tap', key: R.cellId(0, 10) });
+  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 10);
+  assert.equal(m.game.current, 1);
+});
+
+test('the Tower: pick a unit on a tower, see where it steps, confirm; then play the card', () => {
+  let m = modelWith({ 'p0-s1': 7, 'p1-s1': 8, 'p0-s2': 2 }, {
+    moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.TOWER, null],
+  });
+  m = useUpright(update(m, { type: 'draw' }));
+  assert.equal(interactions(m).phase, R.POWERS.TOWER);
+  m = update(m, { type: 'tap', key: R.cellId(0, 7) });
+  const ix = interactions(m);
+  assert.equal(ix.dest, R.cellId(0, 8));
+  assert.deepEqual(ix.victims, ['p1-s1']);
+  m = update(m, { type: 'tap', key: ix.dest });
+  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 8);
+  assert.equal(interactions(m).phase, 'move');
+  assert.equal(m.game.drawn, 3);
+});
+
+test('the Hanged Man upside down: an enemy unit is moved back, then an extra turn', () => {
+  let m = modelWith({ 'p1-s1': 10, 'p0-s1': 2 }, {
+    moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.HANGED_MAN, null],
+    stars: [4, 0],
+  });
+  m = update(update(update(m, { type: 'draw' }), { type: 'use-power' }), { type: 'side-upside' });
+  assert.match(view(m), /move an enemy unit 3 back/);
+  m = update(m, { type: 'tap', key: R.cellId(1, 10) });
+  m = update(m, { type: 'confirm' });
+  assert.equal(R.getUnit(m.game, 'p1-s1').pos, 7);
+  assert.equal(m.game.current, 0);
+});
+
+test('the Hermit upside down: pick a number from the discard pile, then the move onto an ally', () => {
+  let m = modelWith({ 'p0-s1': 6, 'p0-s2': 10 }, {
+    moveDecks: [{ draw: [3, 1], discard: [4, 1] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.HERMIT, null],
+    stars: [1, 0],
+  });
+  m = update(update(update(m, { type: 'draw' }), { type: 'use-power' }), { type: 'side-upside' });
+  assert.equal(interactions(m).phase, R.POWERS.HERMIT);
+  assert.deepEqual(interactions(m).cards, [4]);
+  assert.match(view(m), /data-action="keep"[^>]*data-index="0"/);
+  m = update(m, { type: 'keep', index: 0 });
+  assert.equal(m.game.drawn, 4);
+  assert.match(view(m), /The Hermit · move a unit 4 onto an ally/);
 });
 
 // --- upright or upside down ----------------------------------------------------------
@@ -365,7 +371,7 @@ function holding(held, stars, positions = { 'p0-s1': 8, 'p1-s1': 9 }) {
 }
 
 test('with stars, tapping the power offers both sides; Back closes it', () => {
-  let m = holding(R.POWERS.TOWER, [1, 0]);
+  let m = holding(R.POWERS.LOVERS, [1, 0]);
   assert.ok(interactions(m).canUsePower);
   m = update(m, { type: 'use-power' });
   const ix = interactions(m);
@@ -377,23 +383,15 @@ test('with stars, tapping the power offers both sides; Back closes it', () => {
   assert.match(view(m, { board: '3d' }), /class="buttons side-back"/, 'in 3D the cards are tapped; Back stays a button');
   m = update(m, { type: 'cancel' });
   assert.equal(interactions(m).phase, 'move');
-  assert.equal(m.game.held[0], R.POWERS.TOWER);
+  assert.equal(m.game.held[0], R.POWERS.LOVERS);
 });
 
-test('upside down: pays the star, then the one-cell step, then the turn card', () => {
-  let m = update(holding(R.POWERS.TOWER, [1, 0]), { type: 'use-power' });
+test('upside down: the stars are paid and the event says so', () => {
+  let m = update(holding(R.POWERS.LOVERS, [1, 0]), { type: 'use-power' });
   m = update(m, { type: 'side-upside' });
   assert.deepEqual(m.game.stars, [0, 0]);
   assert.equal(m.game.held[0], null);
-  assert.equal(interactions(m).phase, 'move');
-  assert.match(view(m), /Gold played The Tower upside down/);
-  assert.match(view(m), /Upside down · step a unit 1 cell forward/);
-  m = update(m, { type: 'tap', key: unitKey(m.game, R.getUnit(m.game, 'p0-s1')) });
-  m = update(m, { type: 'confirm' });
-  assert.equal(R.getUnit(m.game, 'p0-s1').pos, 9);
-  assert.deepEqual(m.game.stars, [0, 1], 'the captured unit gave its owner a star');
-  assert.equal(m.game.drawn, 3);
-  assert.equal(interactions(m).phase, 'move');
+  assert.match(view(m), /Gold played The Lovers upside down/);
 });
 
 test('upright from the side choice works as before (targets for the Devil)', () => {
@@ -404,7 +402,7 @@ test('upright from the side choice works as before (targets for the Devil)', () 
 });
 
 test('without stars both sides still show; only upright can be picked', () => {
-  let m = update(holding(R.POWERS.TOWER, [0, 3]), { type: 'use-power' });
+  let m = update(holding(R.POWERS.LOVERS, [0, 3]), { type: 'use-power' });
   const ix = interactions(m);
   assert.equal(ix.phase, 'side');
   assert.ok(ix.canUpright && !ix.canUpsideDown);
@@ -419,7 +417,7 @@ test('with upside-down powers switched off, a tap uses the power upright at once
   const base = modelWith({ 'p0-s1': 8 }, {
     config: { rules: { upsideDown: false } },
     moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
-    held: [R.POWERS.TOWER, null],
+    held: [R.POWERS.LOVERS, null],
   });
   const m = update(update(base, { type: 'draw' }), { type: 'use-power' });
   assert.equal(m.game.held[0], null);
@@ -427,9 +425,9 @@ test('with upside-down powers switched off, a tap uses the power upright at once
 });
 
 test('a drawn Joker with a free power: only the upside-down side is on offer', () => {
-  let m = modelWith({ 'p0-s1': 8 }, {
-    moveDecks: [{ draw: [R.JOKER, 1], discard: [] }, { draw: [1], discard: [] }],
-    held: [R.POWERS.LOVERS, null],
+  let m = modelWith({ 'p0-s1': 6, 'p0-s2': 8 }, {
+    moveDecks: [{ draw: [R.JOKER, 1], discard: [2] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.HERMIT, null],
     stars: [1, 0],
   });
   m = update(m, { type: 'draw' });

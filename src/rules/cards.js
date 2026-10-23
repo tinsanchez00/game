@@ -14,12 +14,12 @@ export const POWERS = Object.freeze({
 
 export const STARTING_POWER_DECK = DEFAULT_CONFIG.powerDeck;
 
-/** Star cost of each power's upside-down effect (one test effect for all, for now). */
+/** Star cost of each power's upside-down effect. */
 const UPSIDE_DOWN_COSTS = Object.freeze({
-  [POWERS.HANGED_MAN]: 1,
+  [POWERS.HANGED_MAN]: 4,
   [POWERS.LOVERS]: 1,
-  [POWERS.DEVIL]: 1,
-  [POWERS.TOWER]: 1,
+  [POWERS.DEVIL]: 3,
+  [POWERS.TOWER]: 2,
   [POWERS.HERMIT]: 1,
 });
 

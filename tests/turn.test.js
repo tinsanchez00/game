@@ -62,19 +62,19 @@ test('a number card cannot be played as a joker and vice versa', () => {
 function jokerGame(extra = {}, positions = {}) {
   return drawCard(gameWith(positions, {
     moveDecks: [{ draw: [JOKER], discard: [] }, { draw: [JOKER], discard: [] }],
-    powerDeck: [POWERS.TOWER, POWERS.HERMIT, POWERS.DEVIL, POWERS.LOVERS, POWERS.HANGED_MAN],
+    powerDeck: [POWERS.LOVERS, POWERS.HERMIT, POWERS.DEVIL, POWERS.LOVERS, POWERS.HANGED_MAN],
     ...extra,
   }));
 }
 
 test('drafting shows the top two power cards', () => {
-  assert.deepEqual(draftOptions(jokerGame()), [POWERS.TOWER, POWERS.HERMIT]);
+  assert.deepEqual(draftOptions(jokerGame()), [POWERS.LOVERS, POWERS.HERMIT]);
 });
 
 test('drafting keeps one; the other goes to the bottom; the turn passes', () => {
   const after = playDraft(jokerGame(), 1);
   assert.equal(after.held[0], POWERS.HERMIT);
-  assert.deepEqual(after.powerDeck, [POWERS.DEVIL, POWERS.LOVERS, POWERS.HANGED_MAN, POWERS.TOWER]);
+  assert.deepEqual(after.powerDeck, [POWERS.DEVIL, POWERS.LOVERS, POWERS.HANGED_MAN, POWERS.LOVERS]);
   assert.equal(after.current, 1);
   assert.equal(after.drawn, null);
 });
@@ -82,10 +82,10 @@ test('drafting keeps one; the other goes to the bottom; the turn passes', () => 
 test('drafting while holding a power sends the old one to the bottom', () => {
   const g = jokerGame({
     held: [POWERS.LOVERS, null],
-    powerDeck: [POWERS.TOWER, POWERS.HERMIT, POWERS.DEVIL, POWERS.HANGED_MAN],
+    powerDeck: [POWERS.LOVERS, POWERS.HERMIT, POWERS.DEVIL, POWERS.HANGED_MAN],
   });
   const after = playDraft(g, 0);
-  assert.equal(after.held[0], POWERS.TOWER);
+  assert.equal(after.held[0], POWERS.LOVERS);
   assert.deepEqual(after.powerDeck, [POWERS.DEVIL, POWERS.HANGED_MAN, POWERS.LOVERS, POWERS.HERMIT]);
 });
 
@@ -108,12 +108,12 @@ test('no held power: nothing to use', () => {
 });
 
 test('after draw: the power replaces the drawn card, which stays spent', () => {
-  const g = drawCard(holding(POWERS.TOWER, { positions: { 'p0-s1': 2 } }));
+  const g = drawCard(holding(POWERS.LOVERS, { positions: { 'p0-s1': 2 } }));
   assert.equal(g.drawn, 3);
   assert.ok(canUsePower(g));
   const after = usePower(g);
   assert.equal(after.held[0], null);
-  assert.deepEqual(after.powerDeck, [POWERS.HERMIT, POWERS.DEVIL, POWERS.TOWER]);
+  assert.deepEqual(after.powerDeck, [POWERS.HERMIT, POWERS.DEVIL, POWERS.LOVERS]);
   assert.deepEqual(after.moveDecks[0].discard, [3]);
   assert.equal(after.drawn, null);
   assert.equal(after.current, 1);
@@ -121,17 +121,17 @@ test('after draw: the power replaces the drawn card, which stays spent', () => {
 });
 
 test('after draw: the power can be used even when the card has a valid move', () => {
-  const g = drawCard(holding(POWERS.TOWER));
+  const g = drawCard(holding(POWERS.LOVERS));
   assert.ok(currentMoves(g).length > 0);
   assert.ok(canUsePower(g));
 });
 
 test('after draw: not before drawing', () => {
-  assert.ok(!canUsePower(holding(POWERS.TOWER)));
+  assert.ok(!canUsePower(holding(POWERS.LOVERS)));
 });
 
 test('a joker while holding a power: draft, or use the power instead', () => {
-  const g = drawCard(holding(POWERS.TOWER, { deck: [JOKER] }));
+  const g = drawCard(holding(POWERS.LOVERS, { deck: [JOKER] }));
   assert.ok(canUsePower(g));
   assert.ok(R.canDraft(g));
   const used = usePower(g);
@@ -139,11 +139,11 @@ test('a joker while holding a power: draft, or use the power instead', () => {
   assert.equal(used.current, 1);
   const drafted = playDraft(g, 0);
   assert.equal(drafted.held[0], POWERS.HERMIT);
-  assert.ok(drafted.powerDeck.includes(POWERS.TOWER));
+  assert.ok(drafted.powerDeck.includes(POWERS.LOVERS));
 });
 
 test('a power drafted this turn is first usable next turn', () => {
-  let g = playDraft(drawCard(holding(null, { deck: [JOKER, 2, 3], powerDeck: [POWERS.TOWER, POWERS.DEVIL] })), 0);
+  let g = playDraft(drawCard(holding(null, { deck: [JOKER, 2, 3], powerDeck: [POWERS.LOVERS, POWERS.DEVIL] })), 0);
   assert.equal(g.current, 1);
   g = R.playDrawnNumber(drawCard(g), { unit: 'p1-s1' });
   g = drawCard(g);
@@ -152,12 +152,12 @@ test('a power drafted this turn is first usable next turn', () => {
 });
 
 test('before draw: the power replaces drawing; the deck is untouched', () => {
-  const g = holding(POWERS.TOWER, { config: BEFORE });
+  const g = holding(POWERS.LOVERS, { config: BEFORE });
   assert.ok(canUsePower(g));
   const after = usePower(g);
   assert.deepEqual(after.moveDecks[0], g.moveDecks[0]);
   assert.equal(after.current, 1);
-  assert.ok(!canUsePower(drawCard(holding(POWERS.TOWER, { config: BEFORE }))));
+  assert.ok(!canUsePower(drawCard(holding(POWERS.LOVERS, { config: BEFORE }))));
 });
 
 test('powerTiming is validated', () => {
@@ -165,6 +165,6 @@ test('powerTiming is validated', () => {
 });
 
 test('with powers off nothing can be used', () => {
-  const g = drawCard(holding(POWERS.TOWER, { config: { powers: false } }));
+  const g = drawCard(holding(POWERS.LOVERS, { config: { powers: false } }));
   assert.ok(!canUsePower(g));
 });

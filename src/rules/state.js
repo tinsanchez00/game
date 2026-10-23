@@ -11,13 +11,9 @@
 //   powerDeck,           top first
 //   held,                per player: power id or null
 //   drawn,               the card being resolved, or null
-//   hanged,              null, or { stage, unit } while a Hanged Man use resolves
+//   hanged,              null, or { stage: 'back', unit, enemy } while a Hanged Man use resolves
 //   campsite,            null, or { unit } when `drawn` came from a campsite
-//   lovers,              null, or { stage, unit } while a "line" Lovers use resolves
 //   hermit,              null, or { stage: 'move', steps } while a Hermit use resolves
-//   upsideDown,          null, or { stage: 'step', card } while an upside-down use's
-//                        one-cell step resolves (card: the turn's card, null before
-//                        draw), then { stage: 'card' } while the turn's card resolves
 //   stars,               per player: stars collected (one per unit that died)
 //   bonusTurn,           true when a move this turn earned another turn
 // }
@@ -87,9 +83,7 @@ export function createGame({ seed = randomSeed(), firstPlayer, config = {} } = {
     drawn: null,
     hanged: null,
     campsite: null,
-    lovers: null,
     hermit: null,
-    upsideDown: null,
     stars: [0, 0],
     bonusTurn: false,
   };

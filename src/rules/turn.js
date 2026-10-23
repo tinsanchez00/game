@@ -12,20 +12,18 @@
 // may have to resolve another one (see continueTurn in moves.js):
 //   - a campsite landing sets `drawn` to a card from the discard pile
 //     (state.campsite), resolved the same way;
-//   - the Hanged Man resolves its first card backward (hanged.stage 'back'),
-//     then waits for drawCard: that card moves the same unit forward
-//     (hanged.stage 'forward');
-//   - the "line" Lovers (rules.loversLine) resolves the card as a normal move
-//     (lovers.stage 'move'), then offers loversJumps / playLoversJump
-//     (lovers.stage 'jump');
+//   - the Hanged Man resolves its card backward (hanged.stage 'back'; the
+//     opponent's units when upside down), then the same player takes an
+//     extra turn;
 //   - the Hermit resolves the card as a move onto an ally (hermit.stage
 //     'move'); the ally is then pushed by the same number (moves.js).
 // The turn is over when state.current changes, or for an extra turn when
-// drawn, hanged, campsite, lovers and hermit are all null again.
+// drawn, hanged, campsite and hermit are all null again.
 
 import { JOKER, POWERS, isNumberCard, upsideDownCost } from './cards.js';
 import { DUD, POWER_TIMINGS } from './config.js';
-import { continueTurn, drawTurnCard, endTurn, legalMoves, playNumberCard, resumeTurnCard } from './moves.js';
+import { otherPlayer } from './state.js';
+import { continueTurn, drawTurnCard, endTurn, legalMoves, occupancy, playNumberCard, turnMoves } from './moves.js';
 import { applyPower, powerChoices } from './powers.js';
 
 function assertPlaying(state, fn) {
@@ -48,7 +46,7 @@ export function drawCard(state) {
 
 export function currentMoves(state) {
   if (!isNumberCard(state.drawn)) return [];
-  return legalMoves(state, state.current, state.drawn);
+  return turnMoves(state);
 }
 
 export function playDrawnNumber(state, move = null) {
@@ -110,41 +108,69 @@ export function passJoker(state) {
 
 // --- using a held power ---------------------------------------------------------
 //
+// A held power has two sides: upright (free) and upside down (costs stars,
+// see upsideDownCost). Either is used instead of the turn's card (after-draw
+// timing; the card is spent) or instead of drawing (before-draw timing).
+// The free powers use the turn's card instead: the Hanged Man (back, then an
+// extra turn), the Hermit (onto an ally, then the push) and the upright Tower
+// (a unit on a tower steps forward, then the card is played as usual).
 // A power drafted this turn is never usable this turn: powers are only used
 // on a turn's own card (not during a Hanged Man use or a campsite card).
-
-/** Powers that use the turn's card rather than spending it. */
-function isFreePower(state, power) {
-  return power === POWERS.HANGED_MAN || power === POWERS.HERMIT
-    || (power === POWERS.LOVERS && state.config.rules.loversLine);
-}
 
 const HERMIT_MODE = Object.freeze({ backward: false, only: null, hermit: true });
 
 /** True while a turn is part-way through a multi-card resolution (no power use). */
 function turnBusy(state) {
-  return Boolean(state.hanged || state.campsite || state.lovers || state.hermit || state.upsideDown);
+  return Boolean(state.hanged || state.campsite || state.hermit);
 }
 
-/** Can the current player use their held power right now? */
-export function canUsePower(state) {
+/** Can the current player use their held power with this side up now? */
+function canUseSide(state, upsideDown) {
   if (state.winner !== null || !state.config.powers) return false;
-  const power = state.held[state.current];
+  const player = state.current;
+  const power = state.held[player];
   if (!power || power === DUD || turnBusy(state)) return false;
-  if (state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW) return state.drawn === null;
-  if (state.drawn === null) return false;
-  // Free powers use the drawn card: a drawn Joker drafts instead.
-  if (!isNumberCard(state.drawn) && isFreePower(state, power)) return false;
-  // After draw, a free power needs a move for the drawn card (backward for the Hanged Man).
-  if (power === POWERS.HANGED_MAN) {
-    return legalMoves(state, state.current, state.drawn, undefined, { backward: true, only: null }).length > 0;
+  if (upsideDown) {
+    const cost = upsideDownCost(power);
+    if (!state.config.rules.upsideDown || cost === null || (state.stars?.[player] ?? 0) < cost) return false;
   }
-  // The Hermit needs a move onto an ally.
-  if (power === POWERS.HERMIT) return legalMoves(state, state.current, state.drawn, undefined, HERMIT_MODE).length > 0;
-  if (isFreePower(state, power)) {
-    return legalMoves(state, state.current, state.drawn, undefined, { backward: false, only: null }).length > 0;
+  const before = state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW;
+  if (before ? state.drawn !== null : state.drawn === null) return false;
+  const card = state.drawn;
+  switch (power) {
+    case POWERS.HANGED_MAN: {
+      if (before) return true;
+      if (!isNumberCard(card)) return false;
+      const mover = upsideDown ? otherPlayer(player) : player;
+      return legalMoves(state, mover, card, occupancy(state), { backward: true, only: null, alone: upsideDown }).length > 0;
+    }
+    case POWERS.HERMIT:
+      if (upsideDown) return powerChoices(state, player, power, { upsideDown }).length > 0;
+      if (before) return true;
+      return isNumberCard(card) && legalMoves(state, player, card, occupancy(state), HERMIT_MODE).length > 0;
+    case POWERS.TOWER:
+      if (upsideDown) return true;
+      // Free: not on a drawn Joker; needs a unit on a tower that can step.
+      return (before || isNumberCard(card)) && powerChoices(state, player, power).length > 0;
+    default:
+      return true;
   }
-  return true;
+}
+
+/** Can the current player use their held power upright right now? */
+export function canUsePower(state) {
+  return canUseSide(state, false);
+}
+
+/** Can the current player use their held power upside down right now (stars included)? */
+export function canUsePowerUpsideDown(state) {
+  return canUseSide(state, true);
+}
+
+function sideChoices(state, upsideDown) {
+  if (!canUseSide(state, upsideDown)) return [];
+  const choices = powerChoices(state, state.current, state.held[state.current], { upsideDown });
+  return choices.length > 0 ? choices : [{}];
 }
 
 /**
@@ -152,88 +178,61 @@ export function canUsePower(state) {
  * has none (it may still be used, to no effect). Empty when it can't be used.
  */
 export function powerUseChoices(state) {
-  if (!canUsePower(state)) return [];
-  const choices = powerChoices(state, state.current, state.held[state.current]);
-  return choices.length > 0 ? choices : [{}];
+  return sideChoices(state, false);
 }
 
-/**
- * Uses the held power instead of resolving the drawn card (after-draw timing;
- * the card stays spent) or instead of drawing (before-draw timing).
- * The Hanged Man is free: the turn's card is then resolved moving backward
- * (drawn first with the before-draw timing; if that card has no backward
- * move the turn ends), and a second card moves the same unit forward.
- * The "line" Lovers is free too: the card moves a unit as usual, then the
- * jump stage follows (moves.js). Either bonus (forward card, jump) needs the
- * turn's card to have moved a unit.
- */
-export function usePower(state, args = {}) {
-  if (!canUsePower(state)) throw new Error('usePower: no power can be used now');
+/** Valid argument objects for usePowerUpsideDown (see powerUseChoices). */
+export function powerUpsideDownChoices(state) {
+  return sideChoices(state, true);
+}
+
+function useSide(state, args, upsideDown) {
   const player = state.current;
   const power = state.held[player];
-  const after = applyPower(state, player, power, args);
+  const after = applyPower(state, player, power, args, { upsideDown });
   const held = [...after.held];
   held[player] = null;
-  const used = { ...after, held, powerDeck: [...after.powerDeck, power] };
+  const stars = [...(after.stars ?? [0, 0])];
+  if (upsideDown) stars[player] -= upsideDownCost(power);
+  const used = { ...after, held, stars, powerDeck: [...after.powerDeck, power] };
+  if (used.winner !== null) return used; // the Tower's step can end the game
+  const before = state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW;
 
-  if (power === POWERS.HANGED_MAN) {
-    const backward = { ...used, hanged: { stage: 'back', unit: null } };
-    return state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? drawCard(backward) : backward;
-  }
-  if (power === POWERS.HERMIT) {
-    const s = state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? drawCard(used) : used;
-    // A move onto an ally, then the push. (Before draw, a Joker then drafts as
-    // usual and a card with no move onto an ally is played as a normal move.)
-    if (isNumberCard(s.drawn) && legalMoves(s, player, s.drawn, undefined, HERMIT_MODE).length > 0) {
-      return { ...s, hermit: { stage: 'move', steps: s.drawn } };
+  switch (power) {
+    case POWERS.HANGED_MAN: {
+      const back = { ...used, hanged: { stage: 'back', unit: null, enemy: upsideDown } };
+      return before ? drawCard(back) : back;
     }
-    return s;
-  }
-  if (power === POWERS.LOVERS && state.config.rules.loversLine) {
-    const s = state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? drawCard(used) : used;
-    // The card is played as usual; the jump follows only a card move. (Before draw,
-    // a Joker then drafts as usual and a card with no move ends the turn.)
-    if (isNumberCard(s.drawn) && legalMoves(s, player, s.drawn).length > 0) {
-      return { ...s, lovers: { stage: 'move' } };
+    case POWERS.HERMIT: {
+      if (upsideDown) {
+        // A number from the discard pile stands in for the turn's card.
+        return { ...used, drawn: args.card, hermit: { stage: 'move', steps: args.card } };
+      }
+      const s = before ? drawCard(used) : used;
+      // A move onto an ally, then the push. (Before draw, a Joker then drafts as
+      // usual and a card with no move onto an ally is played as a normal move.)
+      if (isNumberCard(s.drawn) && legalMoves(s, player, s.drawn, undefined, HERMIT_MODE).length > 0) {
+        return { ...s, hermit: { stage: 'move', steps: s.drawn } };
+      }
+      return s;
     }
-    return s;
+    case POWERS.TOWER:
+      // Upright: after the step, the turn's card is played as usual.
+      if (!upsideDown) return before ? drawCard(used) : used;
+      return endTurn(used);
+    default:
+      return endTurn(used);
   }
-  return endTurn(used);
 }
 
-// --- using a held power upside down -------------------------------------------------
-//
-// Test effect, the same for every power: pay the cost, step one unit one cell
-// forward (a normal card move: it may enter, capture, ascend, escort and
-// trigger the campsite), then the turn's card is played as a normal move.
-// With no possible step, the turn's card is played straight away.
-
-/** Can the current player use their held power upside down right now? */
-export function canUsePowerUpsideDown(state) {
-  if (state.winner !== null || !state.config.powers || !state.config.rules.upsideDown) return false;
-  const power = state.held[state.current];
-  const cost = upsideDownCost(power);
-  if (cost === null || turnBusy(state)) return false;
-  if ((state.stars?.[state.current] ?? 0) < cost) return false;
-  return state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? state.drawn === null : state.drawn !== null;
+/** Uses the held power upright with `args` (one of powerUseChoices). */
+export function usePower(state, args = {}) {
+  if (!canUsePower(state)) throw new Error('usePower: no power can be used now');
+  return useSide(state, args, false);
 }
 
-/**
- * Uses the held power upside down. Returns a state whose `drawn` is 1 with
- * upsideDown.stage 'step' (resolve it with currentMoves / playDrawnNumber),
- * or, when no unit can step, the turn's card ready to play.
- */
-export function usePowerUpsideDown(state) {
+/** Uses the held power upside down with `args` (one of powerUpsideDownChoices), paying its stars. */
+export function usePowerUpsideDown(state, args = {}) {
   if (!canUsePowerUpsideDown(state)) throw new Error('usePowerUpsideDown: no power can be used upside down now');
-  const player = state.current;
-  const power = state.held[player];
-  const held = [...state.held];
-  held[player] = null;
-  const stars = [...state.stars];
-  stars[player] -= upsideDownCost(power);
-  const card = state.config.powerTiming === POWER_TIMINGS.BEFORE_DRAW ? null : state.drawn;
-  const step = {
-    ...state, held, stars, powerDeck: [...state.powerDeck, power], drawn: 1, upsideDown: { stage: 'step', card },
-  };
-  return legalMoves(step, player, 1).length > 0 ? step : resumeTurnCard(step);
+  return useSide(state, args, true);
 }

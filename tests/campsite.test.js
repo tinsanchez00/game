@@ -117,7 +117,7 @@ test('a commander landing with its escort moves again and may bring it along', (
   assert.equal(pos(g, 'p0-s1'), 7);
 });
 
-test('a Hanged Man forward move onto the campsite triggers it', () => {
+test("after a Hanged Man move, the extra turn's move onto the campsite triggers it", () => {
   let g = drawing({ 'p0-s1': 6 }, { deck: [3, 2], held: [POWERS.HANGED_MAN, null] });
   g = playDrawnNumber(usePower(g), { unit: 'p0-s1' });
   assert.equal(pos(g, 'p0-s1'), 3);
@@ -127,18 +127,6 @@ test('a Hanged Man forward move onto the campsite triggers it', () => {
   g = playDrawnNumber(g, { unit: 'p0-s1' });
   assert.ok(pos(g, 'p0-s1') > 5);
   assert.equal(g.current, 1);
-});
-
-test('powers that move a unit onto the campsite do not trigger it', () => {
-  const lovers = usePower(drawing({ 'p0-s1': 10, 'p0-s2': 5 }, { held: [POWERS.LOVERS, null], config: { rules: { loversLine: false } } }), { unit: 'p0-s1', target: 'p0-s2' });
-  assert.equal(pos(lovers, 'p0-s1'), 5);
-  assert.equal(lovers.current, 1);
-  assert.equal(lovers.campsite, null);
-
-  const devil = usePower(drawing({ 'p0-s1': 4, 'p0-s2': 6 }, { held: [POWERS.DEVIL, null] }), { unit: 'p0-s1' });
-  assert.equal(pos(devil, 'p0-s2'), 5);
-  assert.equal(devil.current, 1);
-  assert.equal(devil.campsite, null);
 });
 
 test('a campsite move onto a tower gives the extra turn when that setting is on', () => {

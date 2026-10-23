@@ -569,7 +569,7 @@ export function createBoardScene(config) {
   dim.renderOrder = 20;
   dim.visible = false;
   hud.add(dim);
-  const draftCards = [0, 1].map((index) => {
+  const draftCards = [0, 1, 2, 3].map((index) => {
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(DRAFT.w, DRAFT.h),
       new THREE.MeshBasicMaterial({ color: C.shell, transparent: true, depthTest: false, depthWrite: false, fog: false, toneMapped: false }),
@@ -580,7 +580,7 @@ export function createBoardScene(config) {
     hud.add(m);
     return m;
   });
-  const draft = { shown: false, start: 0, kind: null, turned: [false, false], off: [false, false] };
+  const draft = { shown: false, start: 0, kind: null, turned: [false, false, false, false], off: [false, false, false, false] };
   // Picking a side: a heading, a caption under each card, the cost on the upside-down one.
   const hudPlane = (keep) => {
     const m = new THREE.Mesh(
@@ -983,24 +983,26 @@ export function createBoardScene(config) {
   // --- draft ---
 
   function syncDraft(game, ix, animate, now) {
-    // The draft, or picking a side for the held power: upright, then upside down.
+    // The draft, picking a side for the held power (upright, then upside down),
+    // or the upside-down Hermit's numbers from the discard pile.
     const side = ix.phase === 'side';
-    const show = ix.phase === 'draft' || side;
+    const pile = ix.phase === R.POWERS.HERMIT;
+    const show = ix.phase === 'draft' || side || pile;
     if (show) {
       const held = game.held[game.current];
-      const ids = side ? [held, held] : R.draftOptions(game);
+      const ids = side ? [held, held] : pile ? ix.cards : R.draftOptions(game);
       ids.forEach((id, i) => {
         const mat = draftCards[i].material;
-        setMap(mat, TX.powerFace(id), C.shell);
+        setMap(mat, pile ? TX.cardFace(id) : TX.powerFace(id), C.shell);
       });
       draftCards.forEach((m, i) => { m.visible = i < ids.length; });
-      draft.turned = side ? [false, true] : [false, false];
-      draft.off = side ? [!ix.canUpright, !ix.canUpsideDown] : [false, false];
+      draft.turned = side ? [false, true, false, false] : [false, false, false, false];
+      draft.off = side ? [!ix.canUpright, !ix.canUpsideDown, false, false] : [false, false, false, false];
       if (side) {
         const T = TEXT.side;
         const name = POWER_INFO[held]?.name ?? held;
         setMap(sideParts.captions[0].material, TX.sideCaption(T.upright, T.uprightNote(held)), C.shell);
-        setMap(sideParts.captions[1].material, TX.sideCaption(T.upsideDown, T.upsideNote(ix.cost)), C.shell);
+        setMap(sideParts.captions[1].material, TX.sideCaption(T.upsideDown, T.upsideNote(ix.cost, held)), C.shell);
         setMap(sideParts.heading.material, TX.headingText(T.heading(name)), C.shell);
         setMap(sideParts.cost.material, TX.starCost(ix.cost), C.shell);
       }
@@ -1203,7 +1205,7 @@ export function createBoardScene(config) {
   function syncGhost(game, ix, victimKeys) {
     if (ghost) ghost.obj.visible = false;
     ghost = null;
-    if (!ix.dest || !ix.selected || !['move', 'loversJump'].includes(ix.phase)) return;
+    if (!ix.dest || !ix.selected || !['move', R.POWERS.TOWER].includes(ix.phase)) return;
     const wantType = ix.chosen ? (ix.chosen.startsWith('commander') ? 'commander' : 'soldier') : null;
     let mover = null;
     for (const [id, p] of pieces) {
@@ -1283,38 +1285,34 @@ export function createBoardScene(config) {
 
   /** Effects for what the last action did (events from the controller). */
   function powerEffects(prev, game, events, now) {
-    const played = events.find((e) => e.type === 'played');
-    const jumped = events.some((e) => e.type === 'jumped');
+    const used = events.find((e) => e.type === 'played' || e.type === 'flipped');
+    const upside = used?.type === 'flipped';
     const prevPlaces = unitPlacements(prev, layout);
     const nextPlaces = unitPlacements(game, layout);
-    const movedBy = (player) => game.units
-      .filter((u) => u.player === player && prevPlaces.get(u.id)?.key !== nextPlaces.get(u.id)?.key)
+    const moved = (player = null) => game.units
+      .filter((u) => (player === null || u.player === player) && prevPlaces.get(u.id)?.key !== nextPlaces.get(u.id)?.key)
       .map((u) => ({ from: prevPlaces.get(u.id), to: nextPlaces.get(u.id) }));
     const middle = layout.cells.filter((c) => c.row === 1);
 
-    if (played?.power === R.POWERS.TOWER) {
+    if (used?.power === R.POWERS.TOWER && upside) {
       layout.cells.filter((c) => c.tower).forEach((c, i) => bolt(c.x, c.z, { delay: i * 90, now }));
-    } else if (played?.power === R.POWERS.DEVIL) {
+    } else if (used?.power === R.POWERS.DEVIL) {
       for (const c of middle) ring(c.x, c.z, C.carnelian, { delay: Math.abs(c.x) * 40, now, size: 1.8 });
-    } else if (played?.power === R.POWERS.LOVERS) {
-      for (const m of movedBy(played.player)) if (m.to?.where === 'cell') heartRise(m.to.x, m.to.z, { now });
+    } else if (used?.power === R.POWERS.LOVERS) {
+      for (const m of moved()) if (m.to?.where === 'cell') heartRise(m.to.x, m.to.z, { now });
     }
     // The Hermit: lantern rings where the unit lands and where its ally is pushed to.
     if (prev.hermit && prev.drawn !== null) {
-      movedBy(prev.current).forEach((m, i) => {
+      moved(prev.current).forEach((m, i) => {
         if (m.to) ring(m.to.x, m.to.z, C.hermit, { now, delay: i * 200, y: m.to.y + 0.03 });
       });
     }
     // The Hanged Man: rings where the unit falls from and lands, on the backward move itself.
     if (prev.hanged && prev.drawn !== null) {
-      for (const m of movedBy(prev.current)) {
+      for (const m of moved(prev.hanged.enemy ? R.otherPlayer(prev.current) : prev.current)) {
         if (m.from) ring(m.from.x, m.from.z, C.hanged, { now, y: m.from.y + 0.03 });
         if (m.to) ring(m.to.x, m.to.z, C.hanged, { now, delay: 220, y: m.to.y + 0.03 });
       }
-    }
-    if (jumped) {
-      const player = events.find((e) => e.type === 'jumped').player;
-      for (const m of movedBy(player)) if (m.to?.where === 'cell') heartRise(m.to.x, m.to.z, { now });
     }
   }
 
@@ -1349,9 +1347,9 @@ export function createBoardScene(config) {
     currentPlayer = game.current;
     const fresh = anim && game !== lastGame;
     if (fresh) powerEffects(lastGame, game, model.ui.events ?? [], now);
-    const played = fresh ? (model.ui.events ?? []).find((e) => e.type === 'played')?.power : null;
-    const HIT = { [R.POWERS.TOWER]: 260, [R.POWERS.DEVIL]: 220 };
-    syncUnits(game, anim, now, HIT[played] ?? 0);
+    const usedEv = fresh ? (model.ui.events ?? []).find((e) => e.type === 'played' || e.type === 'flipped') : null;
+    const hit = usedEv?.power === R.POWERS.DEVIL ? 220 : usedEv?.power === R.POWERS.TOWER && usedEv.type === 'flipped' ? 260 : 0;
+    syncUnits(game, anim, now, hit);
     syncHighlights(ix);
     syncLines(ix);
     syncCards(game, ix, model.ui.viewer, anim, now);

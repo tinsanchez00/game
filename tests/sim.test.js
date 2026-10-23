@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as R from '../src/rules/index.js';
-import { apply, buildFast, cardModeOf, discardCounts, genMoves, hermitMoves, loversTarget, undo } from '../sim/fast.js';
+import { apply, buildFast, cardModeOf, discardCounts, genMoves, hermitMoves, loversTargets, undo } from '../sim/fast.js';
 import { applyPower, powerTargets, undoPower } from '../sim/fastpowers.js';
 import { powerBot } from '../sim/powerbot.js';
 import { greedyBot, randomBot, searchBot } from '../sim/bot.js';
@@ -132,43 +132,57 @@ const POWER_CONFIGS = [
   { maxPerCell: 3, commanders: 2, soldiers: 3 },
 ];
 
-const targetKey = (s, args) => JSON.stringify(Object.keys(args).sort().map((k) => {
-  const u = R.getUnit(s, args[k]);
-  return [k, u.pos, u.type];
-}));
+/** A position-level key for engine power arguments (units of a type on a cell are interchangeable). */
+const targetKey = (s, args) => {
+  const u = args.unit ? R.getUnit(s, args.unit) : null;
+  return JSON.stringify([u?.player, u?.pos, u?.type, args.to, args.card]);
+};
 
-test('fast power targets and effects match the engine on random positions', () => {
+/** Engine arguments for a fast target. */
+const toArgs = (fs, t) => {
+  if (t.card !== undefined) return { card: t.card };
+  if (t.to !== undefined) return { unit: fs.ids[t.u], to: t.to };
+  if (t.u !== undefined) return { unit: fs.ids[t.u] };
+  return {};
+};
+
+test('fast power targets and effects match the engine on random positions, both ways up', () => {
   const random = rng(789);
   let checked = 0;
   for (const config of POWER_CONFIGS) {
     for (let n = 0; n < 120; n += 1) {
       const s0 = randomPosition({ ...config, powers: false }, random);
       if (s0.winner !== null) continue;
-      const s = { ...s0, config: R.makeConfig({ ...config, powers: true }) };
+      const s = { ...s0, config: R.makeConfig({ ...config, powers: true }), drawn: null, campsite: null, stars: [5, 5] };
       for (const id of R.POWER_IDS) {
-        const fs = buildFast(s);
-        const k = R.POWER_IDS.indexOf(id);
-        fs.held[s.current] = k;
-        const engineChoices = R.powerChoices(s, s.current, id);
-        const fastTargets = powerTargets(fs, s.current, k);
-        const toArgs = (t) => (t.length === 2 ? { unit: fs.ids[t[0]], target: fs.ids[t[1]] }
-          : t.length === 1 ? { unit: fs.ids[t[0]] } : {});
-        const want = new Set((engineChoices.length ? engineChoices : [{}]).map((c) => targetKey(s, c)));
-        const got = new Set(fastTargets.map((t) => targetKey(s, toArgs(t))));
-        assert.deepEqual([...got].sort(), [...want].sort(), `${id} targets`);
-        for (const t of fastTargets) {
-          const before = [...fs.pos];
-          const after = R.applyPower(s, s.current, id, toArgs(t));
-          const rec = applyPower(fs, s.current, k, t);
-          assert.deepEqual([...fs.pos], after.units.map((u) => u.pos), `${id} effect`);
-          undoPower(fs, rec);
-          assert.deepEqual([...fs.pos], before);
-          checked += 1;
+        for (const upsideDown of [false, true]) {
+          const fs = buildFast(s);
+          const k = R.POWER_IDS.indexOf(id);
+          fs.held[s.current] = k;
+          const engineChoices = R.powerChoices(s, s.current, id, { upsideDown });
+          const fastTargets = powerTargets(fs, s.current, k, upsideDown);
+          const want = new Set((engineChoices.length ? engineChoices : [{}]).map((c) => targetKey(s, c)));
+          const got = new Set(fastTargets.map((t) => targetKey(s, toArgs(fs, t))));
+          assert.deepEqual([...got].sort(), [...want].sort(), `${id} ${upsideDown ? 'upside down' : 'upright'} targets`);
+          for (const t of fastTargets) {
+            const before = [...fs.pos];
+            const after = R.applyPower(s, s.current, id, toArgs(fs, t), { upsideDown });
+            const rec = applyPower(fs, s.current, k, t, upsideDown);
+            assert.deepEqual([...fs.pos], after.units.map((u) => u.pos), `${id} effect`);
+            const paid = upsideDown ? R.upsideDownCost(id) : 0;
+            const want2 = [...after.stars];
+            want2[s.current] -= paid;
+            assert.deepEqual(fs.stars, want2, `${id} stars`);
+            undoPower(fs, rec);
+            assert.deepEqual([...fs.pos], before);
+            assert.deepEqual(fs.stars, [5, 5]);
+            checked += 1;
+          }
         }
       }
     }
   }
-  assert.ok(checked > 1000, `checked ${checked}`);
+  assert.ok(checked > 1500, `checked ${checked}`);
 });
 
 test('fast backward moves match the engine', () => {
@@ -293,7 +307,7 @@ test('the mixed look-ahead draws one depth per turn, at the level odds', () => {
 
 test('the position cache never changes a decision', () => {
   let hits = 0;
-  for (const [level, config] of [['strong', { soldiers: 4 }], ['average', { soldiers: 3, powerDeck: Array(5).fill('hanged-man'), rules: { hangedTurn: false } }]]) {
+  for (const [level, config] of [['strong', { soldiers: 4 }], ['average', { soldiers: 3, powerDeck: Array(5).fill('hanged-man') }]]) {
     for (const seed of [1, 2]) {
       const play = (cache) => playGame({
         config, seed, bots: [powerBot({ level, cache, random: rng(seed) }), powerBot({ level, cache, random: rng(seed + 5) })],
@@ -373,46 +387,28 @@ test('a held power replaced at a Joker draft by a different card counts as disca
   assert.ok(heldDevil > 0 && discarded > 0, `held ${heldDevil}, discarded ${discarded}`);
 });
 
-test('fast "line" Lovers jump targets match the engine', () => {
+test('fast Lovers jump targets match the engine', () => {
   const random = rng(987);
   let checked = 0;
   for (let n = 0; n < 400; n += 1) {
-    const s = randomPosition({ powers: false, rules: { loversLine: true } }, random);
+    const s = randomPosition({ powers: false }, random);
     if (s.winner !== null) continue;
     const fs = buildFast(s);
     s.units.forEach((u, i) => {
-      const want = R.loversJumpTarget(s, u.id);
-      assert.equal(loversTarget(fs, i), want === null ? -1 : want, `unit ${u.id}`);
-      if (want !== null) checked += 1;
+      const want = R.loversTargets(s, u.id).sort((a, b) => a - b);
+      assert.deepEqual(loversTargets(fs, i).sort((a, b) => a - b), want, `unit ${u.id}`);
+      if (want.length) checked += 1;
     });
   }
   assert.ok(checked > 100, `checked ${checked}`);
 });
 
-test('power bots play full games with the "line" Lovers', () => {
-  let jumped = 0;
+test('power bots play full games with the Hanged Man', () => {
   let used = 0;
   for (const level of ['average', 'strong-v1']) {
     for (const seed of [1, 2]) {
       const r = playGame({
-        config: { soldiers: 3, powerDeck: ['lovers', 'lovers', 'lovers', 'dud'], rules: { loversLine: true } },
-        seed,
-        bots: [powerBot({ level, random: rng(seed) }), powerBot({ level, random: rng(seed + 3) })],
-      });
-      assert.ok(r.finished);
-      jumped += r.powers.lovers.jumped;
-      used += r.powers.lovers.used;
-    }
-  }
-  assert.ok(used > 0 && jumped > 0, `used ${used}, jumped ${jumped}`);
-});
-
-test('power bots play full games with the extra-turn Hanged Man', () => {
-  let used = 0;
-  for (const level of ['average', 'strong-v1']) {
-    for (const seed of [1, 2]) {
-      const r = playGame({
-        config: { soldiers: 3, powerDeck: ['hanged-man', 'hanged-man', 'hanged-man', 'dud'], rules: { hangedTurn: true } },
+        config: { soldiers: 3, powerDeck: ['hanged-man', 'hanged-man', 'hanged-man', 'dud'] },
         seed,
         bots: [powerBot({ level, random: rng(seed) }), powerBot({ level, random: rng(seed + 3) })],
       });
@@ -465,8 +461,7 @@ test('fast stars after moves and power effects match the engine, and undo restor
       for (const id of ['devil', 'tower']) {
         const k = R.POWER_IDS.indexOf(id);
         for (const t of powerTargets(fs, s.current, k)) {
-          const args = t.length === 1 ? { unit: fs.ids[t[0]] } : {};
-          const after = R.applyPower(s, s.current, id, args);
+          const after = R.applyPower(s, s.current, id, toArgs(fs, t));
           const rec = applyPower(fs, s.current, k, t);
           assert.deepEqual(fs.stars, after.stars, `stars after ${id}`);
           deaths += after.stars[0] + after.stars[1] - 5;
@@ -491,7 +486,7 @@ test('power bots play full games using powers upside down, at both timings', () 
         });
         assert.ok(r.finished, `${powerTiming} ${level} ${seed}`);
         for (const p of [0, 1]) {
-          assert.equal(r.starsSpent[p], r.upsideDownUsed[p], 'every test effect costs one star');
+          assert.ok(r.starsSpent[p] >= r.upsideDownUsed[p], 'every upside-down use costs at least one star');
           assert.ok(r.starsGained[p] >= r.starsSpent[p]);
         }
         flips += r.upsideDownUsed[0] + r.upsideDownUsed[1];

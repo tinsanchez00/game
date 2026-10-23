@@ -6,7 +6,7 @@ import { interactions } from './controller.js';
 import { TEXT } from './labels.js';
 import { initShell, updateShell, viewShell } from './shell.js';
 
-const STORE_KEY = 'board-game-test-v5';
+const STORE_KEY = 'board-game-test-v6';
 const BOARD_KEY = 'board-game-board-style-v1';
 
 function load() {

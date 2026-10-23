@@ -19,13 +19,20 @@ export const OPTION_LABELS = {
   'commander+escort': 'Commander + escort',
 };
 
-// One-line summaries of the upright effects, for the side picker (placeholders).
+// One-line summaries of each side's effect, for the side picker (placeholders).
 const UPRIGHT_SHORT = {
-  [POWERS.HANGED_MAN]: 'move back, then an extra turn',
-  [POWERS.LOVERS]: 'move, then jump to an ally',
-  [POWERS.DEVIL]: 'pull the middle lane in',
-  [POWERS.TOWER]: 'destroy every tower',
+  [POWERS.HANGED_MAN]: 'a unit back, then an extra turn',
+  [POWERS.LOVERS]: 'a unit jumps to its nearest ally',
+  [POWERS.DEVIL]: 'kill the units next to yours',
+  [POWERS.TOWER]: 'step a unit off a tower, then your card',
   [POWERS.HERMIT]: 'move onto an ally, push it on',
+};
+const UPSIDE_SHORT = {
+  [POWERS.HANGED_MAN]: 'an enemy unit back, then an extra turn',
+  [POWERS.LOVERS]: 'an enemy unit jumps to its nearest ally',
+  [POWERS.DEVIL]: 'pull every unit one cell in',
+  [POWERS.TOWER]: 'destroy every unit on the towers',
+  [POWERS.HERMIT]: 'use a number from your discard pile',
 };
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -59,15 +66,14 @@ export const TEXT = {
   usePower: (power) => `Use ${power}`,
   usePowerInstead: (power) => `Use ${power} instead`,
   unleash: 'Unleash',
-  jump: 'Jump',
-  stay: 'Stay',
+  stepForward: 'Step',
   // Picking a side for the held power (placeholders).
   side: {
     heading: (power) => `Use ${power}`,
     upright: 'Upright',
     uprightNote: (power) => `Free · ${UPRIGHT_SHORT[power] ?? ''}`.replace(/ · $/, ''),
     upsideDown: 'Upside down',
-    upsideNote: (cost) => `${plural(cost, 'star')} · step 1 cell, then your card`,
+    upsideNote: (cost, power) => `${plural(cost, 'star')} · ${UPSIDE_SHORT[power] ?? ''}`,
     back: 'Back',
   },
   stepCard: 'Step',
@@ -77,35 +83,35 @@ export const TEXT = {
     handoff: (team) => `${team}'s turn — pass the phone`,
     startTurn: (team) => `Start ${team}'s turn`,
     draw: (team) => `${team}'s turn · tap your deck to draw`,
-    // step: null (a normal card), 'back' / 'forward' (The Hanged Man), 'campsite', 'lovers'
-    drawForward: 'The Hanged Man · tap your deck to draw the forward card',
+    // step: null (a normal card), 'back' / 'backEnemy' (The Hanged Man), 'campsite', 'hermit'
     move: (n, step) => ({
       back: `The Hanged Man · move a unit ${n} back`,
-      forward: `The Hanged Man · move ${n} forward`,
+      backEnemy: `The Hanged Man · move an enemy unit ${n} back`,
       campsite: `Campsite · move that unit ${n} again`,
-      lovers: `The Lovers · move a unit ${n} forward`,
       hermit: `The Hermit · move a unit ${n} onto an ally`,
-      upsideDown: `Upside down · step a unit ${n} cell forward`,
     })[step] ?? `Move a unit ${n} forward`,
     pickMove: 'Tap the glowing cell to move there',
     side: (power) => `Use ${power} upright or upside down`,
     stuck: (n, step) => ({
       back: `No valid backward move with ${n}`,
-      forward: `No valid forward move with ${n}`,
+      backEnemy: `No enemy unit can move ${n} back`,
       campsite: `Campsite · that unit can't move ${n}`,
     })[step] ?? `No valid move with ${n}`,
     jokerPass: (step) => (step === 'campsite' ? 'Campsite · Joker, no move' : 'Joker · no move this turn'),
     joker: 'Joker · draft a power, or use yours instead',
     draft: (step) => ({
       back: 'The Hanged Man · your Joker drafts a power',
-      forward: 'The Hanged Man · your Joker drafts a power',
+      backEnemy: 'The Hanged Man · your Joker drafts a power',
       campsite: 'Campsite · your Joker drafts a power',
     })[step] ?? 'Keep one power',
-    loversPick: 'The Lovers · pick a unit in the middle lane',
-    loversTarget: 'The Lovers · pick the lone ally to join',
-    loversJump: 'The Lovers · tap your ally to jump',
-    loversPickJumper: 'The Lovers · pick the unit that jumps',
-    devilPick: 'The Devil · pick one of your units in the middle lane',
+    loversPick: 'The Lovers · pick a unit to jump to its nearest ally',
+    loversPickEnemy: 'The Lovers · pick an enemy unit to jump to its nearest ally',
+    loversTarget: 'The Lovers · tap the ally to jump to',
+    towerPick: 'The Tower · pick a unit on a tower to step forward',
+    towerConfirm: 'The Tower · step forward, then play your card',
+    devilPick: 'The Devil · pick one of your units',
+    devilPickAny: 'The Devil · pick any unit in the middle lane',
+    hermitPile: 'The Hermit · pick a number from your discard pile',
     devilConfirm: 'Marked units will die',
     chooseUnit: 'Which unit?',
     won: (team) => `${team} ascends!`,
@@ -119,7 +125,6 @@ export const TEXT = {
     drafted: (team, power) => `${team} drafted ${power}`,
     played: (team, power) => `${team} played ${power}`,
     flipped: (team, power) => `${team} played ${power} upside down`,
-    jumped: (team) => `${team} jumped to an ally`,
     extraTurn: (team) => `${team} takes an extra turn`,
   },
 };
@@ -148,7 +153,6 @@ export const MENU = {
     standard: { name: 'Standard' },
     short: { name: 'Short game' },
     noPowers: { name: 'No powers' },
-    earlierPowers: { name: 'Earlier powers' },
     twoJokers: { name: 'Two Jokers' },
     urTowers: { name: 'Ur towers' },
   },
@@ -157,8 +161,6 @@ export const MENU = {
     powers: 'Powers',
     deck: 'Powers in the deck',
     timing: 'Use a power',
-    lovers: 'The Lovers',
-    hanged: 'The Hanged Man',
     jokers: 'Jokers in each deck',
     commanderLock: 'Commander lock',
     escort: 'Escort',
@@ -169,8 +171,6 @@ export const MENU = {
   value: {
     timing: { afterDraw: 'After draw', beforeDraw: 'Before draw' },
     deck: MENU_DECK,
-    lovers: { jump: 'Jump', pairing: 'Pairing' },
-    hanged: { extra: 'Extra turn', forward: 'Forward card' },
   },
   /** One line describing a settings object. */
   summary: (s) => {
@@ -179,8 +179,6 @@ export const MENU = {
     const powers = !s.powers || n === 0 ? 'no powers' : n === 5 ? 'all five powers' : `${n} power${n === 1 ? '' : 's'}: ${missing.join(', ')}`;
     const parts = [`${s.units} units each`, powers, `${s.jokers} Joker${s.jokers === 1 ? '' : 's'}`];
     if (s.powers && s.timing !== 'afterDraw') parts.push('powers before draw');
-    if (s.powers && s.lovers !== 'jump') parts.push('the Lovers: Pairing');
-    if (s.powers && s.hanged !== 'extra') parts.push('the Hanged Man: Forward card');
     if (s.towerExtraTurn) parts.push('towers give another turn');
     if (!s.commanderLock) parts.push('no commander lock');
     if (!s.escort) parts.push('no escort');

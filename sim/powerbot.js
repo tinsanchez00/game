@@ -9,35 +9,34 @@
 //   strong-v1   2 turns ahead; counts cards; no noise
 //   average-v1  1 turn ahead; no card counting; temperature 1.5
 // "2 turns ahead" = its own turn, then every card the opponent can draw and
-// their best reply. An extra card drawn inside a turn (a campsite card, the
-// Hanged Man's forward card) uses up one turn of look-ahead too, like the
-// next turn would for a person thinking ahead.
+// their best reply. An extra card drawn inside a turn (a campsite card) uses
+// up one turn of look-ahead too, like the next turn would for a person
+// thinking ahead; so does the Hanged Man's extra turn.
 //
 // `cache: true` reuses the value of a turn-start position met again during a
-// decision (same units, powers, decks, side to move and look-ahead left).
-// Decisions are identical either way; it is off by default because such
-// repeats are rare (each line of play leaves the decks in a different state)
-// and the bookkeeping costs about as much as it saves.
+// decision (same units, powers, stars, decks, side to move and look-ahead
+// left). Decisions are identical either way; it is off by default because
+// such repeats are rare and the bookkeeping costs about as much as it saves.
 //
 // The bot answers bot.act(state) at every decision the engine offers:
-//   turn start (before-draw timing, holding a power): draw or use the power
+//   turn start (before-draw timing, holding a power): draw, or use the power
+//     either way up
 //   number card: a move, pass (no move), or use the power (after-draw timing)
 //   joker: draft (which card to keep), use the power, or pass
-//   campsite / Hanged Man cards: which move (limited to one unit, or backward)
-//   "line" Lovers jump stage: which jump, or none
+//   campsite / Hanged Man / Hermit cards: which move
 
 import {
   CARD_IDS, JOKER, canUsePower, canUsePowerUpsideDown, currentMoves, draftOptions, getUnit,
-  isNumberCard, loversJumps, powerUseChoices,
+  isNumberCard, powerUpsideDownChoices, powerUseChoices,
 } from '../src/rules/index.js';
 import { DEFAULT_WEIGHTS, WIN, endWaitTable, evaluate } from './bot.js';
 import {
-  apply, buildFast, canPushAlone, cardModeOf, discardCounts, drawCounts, genMoves, hermitMoves, lift, loversTarget, place,
+  apply, buildFast, canPushAlone, cardModeOf, discardCounts, drawCounts, genMoves, hermitMoves,
   returnCard, takeCard, undo,
 } from './fast.js';
 import {
-  HERMIT, HM, LOVERS, NO_TARGET, applyDraft, applyUpsideDown, canFlip, usable, applyPower, draftOdds, powerTargets,
-  undoDraft, undoPower, undoUpsideDown,
+  HERMIT, HM, NO_TARGET, TOWER, applyDraft, applyPower, canFlip, draftOdds, powerTargets, undoDraft,
+  undoPower, usable,
 } from './fastpowers.js';
 
 /** Value of holding each power, in progress points (pips). */
@@ -46,8 +45,8 @@ export const DEFAULT_POWER_VALUES = Object.freeze({
 });
 
 /**
- * Value of one star, in pips (bot tuning, not a rule): a star can later turn
- * a held power into an upside-down use.
+ * Value of one star, in pips (bot tuning, not a rule): stars later turn a
+ * held power upside down.
  */
 export const DEFAULT_STAR_VALUE = 0.5;
 
@@ -61,16 +60,10 @@ export const LEVELS = Object.freeze({
   'average-v1': { depths: [[1, 1]], countCards: false, temperature: 1.5 },
 });
 
-// Continuations after a move: END (the turn ends), the Hanged Man's forward
-// card for unit index c >= 0, or a "line" Lovers jump for unit u (jumpFor(u)).
-// JUMP_MOVER: a jump for the unit that makes the move.
+// Continuations after a move: END (the turn ends) or EXTRA (the Hanged Man's
+// extra turn for the mover's side).
 const END = -2;
-const EXTRA = -3; // rules.hangedTurn: an extra turn for the mover's side
-const JUMP_MOVER = -1000;
-const jumpFor = (u) => -4 - u;
-// After an upside-down use's step: the turn's card slot k (-1: draw it, before draw).
-const RESUME = -2000;
-const resumeWith = (k) => RESUME - (k + 1);
+const EXTRA = -3;
 
 // --- search ------------------------------------------------------------------
 
@@ -145,11 +138,7 @@ function endTurn(fs, q, depth, ctx) {
 }
 
 function proceed(fs, q, cont, depth, ctx) {
-  if (cont === END) return endTurn(fs, q, depth, ctx);
-  if (cont === EXTRA) return extraTurn(fs, q, depth, ctx);
-  if (cont >= 0) return forwardCard(fs, q, cont, depth, ctx);
-  if (cont <= RESUME) return resumeCard(fs, q, RESUME - cont - 1, depth, ctx);
-  return loversJump(fs, q, -4 - cont, depth, ctx);
+  return cont === EXTRA ? extraTurn(fs, q, depth, ctx) : endTurn(fs, q, depth, ctx);
 }
 
 /** q plays again (Hanged Man extra turn); it uses up a turn of look-ahead. */
@@ -163,38 +152,6 @@ function extraTurn(fs, q, depth, ctx) {
   fs.bonus = prevBonus;
   return v;
 }
-
-/** Moves unit i to path position t without captures; returns an undo record. */
-function jumpUnit(fs, i, t) {
-  const rec = { i, from: fs.pos[i] };
-  lift(fs, i);
-  place(fs, i, t);
-  return rec;
-}
-
-function unjump(fs, rec) {
-  lift(fs, rec.i);
-  place(fs, rec.i, rec.from);
-}
-
-/** q's best "line" Lovers jump for `unit`, or none; then the turn ends. */
-function loversJump(fs, q, unit, depth, ctx) {
-  const isBetter = better(ctx, q);
-  let best = endTurn(fs, q, depth, ctx);
-  for (let i = 0; i < fs.n; i += 1) {
-    if (fs.owner[i] !== q || (unit >= 0 && i !== unit)) continue;
-    const t = loversTarget(fs, i);
-    if (t < 0) continue;
-    const rec = jumpUnit(fs, i, t);
-    const v = endTurn(fs, q, depth, ctx);
-    unjump(fs, rec);
-    if (isBetter(v, best)) best = v;
-  }
-  return best;
-}
-
-/** What follows the Hanged Man's backward move of unit u. */
-const afterBack = (fs, u) => (fs.hangedTurn ? EXTRA : u);
 
 /** Applies a move inside q's turn (the turn may continue). */
 function play(fs, q, u, e, d, back) {
@@ -220,7 +177,7 @@ function afterLanding(fs, q, rec, cont, depth, ctx) {
 /**
  * q's best move with card d (backward for the Hanged Man, limited to unit
  * `only` when >= 0), or undefined when there is none. A backward move is
- * followed by the forward card for the unit that moved.
+ * followed by the extra turn.
  */
 function bestMove(fs, q, d, back, only, cont, depth, ctx) {
   const moves = genMoves(fs, q, d, back, only);
@@ -229,11 +186,35 @@ function bestMove(fs, q, d, back, only, cont, depth, ctx) {
   let best = worst(ctx, q);
   for (const [u, e] of moves) {
     const rec = play(fs, q, u, e, d, back);
-    const v = afterLanding(fs, q, rec, back ? afterBack(fs, u) : cont === JUMP_MOVER ? jumpFor(u) : cont, depth, ctx);
+    const v = afterLanding(fs, q, rec, back ? EXTRA : cont, depth, ctx);
     unplay(fs, rec);
     if (isBetter(v, best)) best = v;
   }
   return best;
+}
+
+/**
+ * The upside-down Hanged Man: q moves one of the opponent's units back by d
+ * (alone, no campsite), then q takes an extra turn. Undefined with no move.
+ */
+function bestEnemyBack(fs, q, d, depth, ctx) {
+  const moves = genMoves(fs, 1 - q, d, true, -1, true);
+  if (moves.length === 0) return undefined;
+  const isBetter = better(ctx, q);
+  let best = worst(ctx, q);
+  for (const [u] of moves) {
+    const v = enemyBackMove(fs, q, u, d, depth, ctx);
+    if (isBetter(v, best)) best = v;
+  }
+  return best;
+}
+
+function enemyBackMove(fs, q, u, d, depth, ctx) {
+  const rec = apply(fs, u, -1, d, true);
+  fs.current = q;
+  const v = extraTurn(fs, q, depth, ctx);
+  undo(fs, rec);
+  return v;
 }
 
 /** Value at the start of fs.current's turn, before any card is drawn. */
@@ -242,18 +223,45 @@ function turnStart(fs, depth, ctx) {
   return cached(fs, 'T', depth, ctx, () => searchTurn(fs, depth, ctx));
 }
 
+/**
+ * Power uses q may consider now, each way up: [{ upside, target }]. `k` is the
+ * drawn card slot (after-draw timing) or -1 (before draw). Mirrors the
+ * engine's canUsePower / canUsePowerUpsideDown.
+ */
+function powerUses(fs, q, k) {
+  const p = fs.held[q];
+  if (!fs.powersOn || !usable(p)) return [];
+  const before = k < 0;
+  const number = k >= 0 && k < fs.J;
+  const out = [];
+  for (const upside of [false, true]) {
+    if (upside && !canFlip(fs, q, p)) continue;
+    let ok = true;
+    if (p === HM) {
+      ok = before || (number && genMoves(fs, upside ? 1 - q : q, fs.values[k], true, -1, upside).length > 0);
+    } else if (p === HERMIT && !upside) {
+      ok = before || (number && hermitMoves(fs, q, fs.values[k]).length > 0);
+    } else if (p === TOWER && !upside) {
+      ok = before || number;
+    }
+    if (!ok) continue;
+    const targets = powerTargets(fs, q, p, upside);
+    // These need a real target: the Tower's step, the upside-down Hermit's card.
+    if ((p === TOWER && !upside) || (p === HERMIT && upside)) {
+      if (targets[0] === NO_TARGET) continue;
+    }
+    for (const target of targets) out.push({ upside, target });
+  }
+  return out;
+}
+
 function searchTurn(fs, depth, ctx) {
   const q = fs.current;
   const isBetter = better(ctx, q);
   let best = drawAndResolve(fs, depth, ctx);
-  if (fs.powersOn && fs.beforeDraw && usable(fs.held[q])) {
-    const k = fs.held[q];
-    for (const t of powerTargets(fs, q, k)) {
-      const v = afterPower(fs, q, k, t, -1, depth, ctx);
-      if (isBetter(v, best)) best = v;
-    }
-    if (canFlip(fs, q, k)) {
-      const v = afterUpsideDown(fs, q, k, -1, depth, ctx);
+  if (fs.beforeDraw) {
+    for (const use of powerUses(fs, q, -1)) {
+      const v = afterPower(fs, q, fs.held[q], use, -1, depth, ctx);
       if (isBetter(v, best)) best = v;
     }
   }
@@ -261,7 +269,7 @@ function searchTurn(fs, depth, ctx) {
 }
 
 /** Expected value over fs.current's turn card, each resolved at its best. */
-function drawAndResolve(fs, depth, ctx) {
+function drawAndResolve(fs, depth, ctx, { powers = true } = {}) {
   const q = fs.current;
   const { counts, total } = drawCounts(fs, q);
   let value = 0;
@@ -269,7 +277,7 @@ function drawAndResolve(fs, depth, ctx) {
     const cnt = counts[k];
     if (!cnt) continue;
     const refilled = takeCard(fs, q, k);
-    const v = resolveCard(fs, q, k, depth, ctx);
+    const v = powers ? resolveCard(fs, q, k, depth, ctx) : plainCard(fs, q, k, depth, ctx);
     returnCard(fs, q, k, refilled);
     value += (cnt / total) * v;
   }
@@ -294,101 +302,32 @@ function jokerValue(fs, q, cont, depth, ctx) {
   return fs.powersOn ? draftValue(fs, q, cont, depth, ctx) : proceed(fs, q, cont, depth, ctx);
 }
 
-/** q's best way to resolve its turn card k, powers included. */
-function resolveCard(fs, q, k, depth, ctx) {
-  const isBetter = better(ctx, q);
-  let best;
-  if (k < fs.J) {
-    best = bestMove(fs, q, fs.values[k], false, -1, END, depth, ctx);
-    if (best === undefined) best = endTurn(fs, q, depth, ctx);
-  } else {
-    best = jokerValue(fs, q, END, depth, ctx);
-  }
-  if (fs.powersOn && !fs.beforeDraw && usable(fs.held[q])) {
-    const p = fs.held[q];
-    // After draw, free powers can't be used on a Joker (it drafts) and need a
-    // move for a number card (backward for the Hanged Man).
-    const free = p === HM || p === HERMIT || (p === LOVERS && fs.loversLine);
-    const hasMove = () => (p === HERMIT ? hermitMoves(fs, q, fs.values[k]).length > 0 : genMoves(fs, q, fs.values[k], p === HM).length > 0);
-    if (!free || (k < fs.J && hasMove())) {
-      for (const t of powerTargets(fs, q, p)) {
-        const v = afterPower(fs, q, p, t, k, depth, ctx);
-        if (isBetter(v, best)) best = v;
-      }
-    }
-    if (canFlip(fs, q, p)) {
-      const v = afterUpsideDown(fs, q, p, k, depth, ctx);
-      if (isBetter(v, best)) best = v;
-    }
-  }
-  return best;
-}
-
-/**
- * q uses held card p upside down (test effect): a one-cell step by any unit
- * (a normal card move), then the turn's card k (-1: drawn after the step).
- */
-function afterUpsideDown(fs, q, p, k, depth, ctx) {
-  const rec = applyUpsideDown(fs, q, p);
-  const cont = resumeWith(k);
-  let v = bestMove(fs, q, 1, false, -1, cont, depth, ctx);
-  if (v === undefined) v = resumeCard(fs, q, k, depth, ctx);
-  undoUpsideDown(fs, rec);
-  return v;
-}
-
-/** The turn's card k after an upside-down step, played as a normal card (no power use). */
-function resumeCard(fs, q, k, depth, ctx) {
-  if (k >= 0) return plainCard(fs, q, k, depth, ctx);
-  const { counts, total } = drawCounts(fs, q);
-  let value = 0;
-  for (let c = 0; c <= fs.J; c += 1) {
-    const cnt = counts[c];
-    if (!cnt) continue;
-    const refilled = takeCard(fs, q, c);
-    value += (cnt / total) * plainCard(fs, q, c, depth, ctx);
-    returnCard(fs, q, c, refilled);
-  }
-  return value;
-}
-
+/** Card k played as a normal card (no power use). */
 function plainCard(fs, q, k, depth, ctx) {
   if (k === fs.J) return jokerValue(fs, q, END, depth, ctx);
   const v = bestMove(fs, q, fs.values[k], false, -1, END, depth, ctx);
   return v === undefined ? endTurn(fs, q, depth, ctx) : v;
 }
 
-/** The Hanged Man's backward card k; no backward move: the turn ends (a Joker drafts, no forward card). */
-function hangedCard(fs, q, k, depth, ctx) {
-  if (k === fs.J) return draftValue(fs, q, END, depth, ctx);
-  const v = bestMove(fs, q, fs.values[k], true, -1, END, depth, ctx);
-  return v === undefined ? endTurn(fs, q, depth, ctx) : v;
+/** q's best way to resolve its turn card k, powers included (after-draw timing). */
+function resolveCard(fs, q, k, depth, ctx) {
+  const isBetter = better(ctx, q);
+  let best = plainCard(fs, q, k, depth, ctx);
+  if (!fs.beforeDraw) {
+    for (const use of powerUses(fs, q, k)) {
+      const v = afterPower(fs, q, fs.held[q], use, k, depth, ctx);
+      if (isBetter(v, best)) best = v;
+    }
+  }
+  return best;
 }
 
-/**
- * The Hanged Man's forward card, moving unit `unit`. The extra
- * draw uses up a turn of look-ahead.
- */
-function forwardCard(fs, q, unit, depth0, ctx) {
-  const depth = depth0 - 1;
-  if (depth <= 0) return leaf(fs, ctx);
-  const { counts, total } = drawCounts(fs, q);
-  let value = 0;
-  for (let k = 0; k <= fs.J; k += 1) {
-    const cnt = counts[k];
-    if (!cnt) continue;
-    const refilled = takeCard(fs, q, k);
-    let v;
-    if (k < fs.J) {
-      v = bestMove(fs, q, fs.values[k], false, unit, END, depth, ctx);
-      if (v === undefined) v = endTurn(fs, q, depth, ctx);
-    } else {
-      v = jokerValue(fs, q, END, depth, ctx);
-    }
-    returnCard(fs, q, k, refilled);
-    value += (cnt / total) * v;
-  }
-  return value;
+/** The Hanged Man's card k: back (own or enemy unit), then the extra turn; no move ends the turn. */
+function hangedCard(fs, q, k, upside, depth, ctx) {
+  if (k === fs.J) return draftValue(fs, q, END, depth, ctx);
+  const d = fs.values[k];
+  const v = upside ? bestEnemyBack(fs, q, d, depth, ctx) : bestMove(fs, q, d, true, -1, END, depth, ctx);
+  return v === undefined ? endTurn(fs, q, depth, ctx) : v;
 }
 
 /**
@@ -416,17 +355,7 @@ function campsite(fs, q, unit, cont, depth0, ctx) {
 }
 
 /**
- * The "line" Lovers' card k: a normal move, then the mover's jump. (Before
- * draw: a Joker drafts as usual, and no move ends the turn.)
- */
-function loversCard(fs, q, k, depth, ctx) {
-  if (k === fs.J) return jokerValue(fs, q, END, depth, ctx);
-  const v = bestMove(fs, q, fs.values[k], false, -1, JUMP_MOVER, depth, ctx);
-  return v === undefined ? endTurn(fs, q, depth, ctx) : v;
-}
-
-/**
- * The Hermit's move of unit u onto an ally with card d, then the push: that
+ * The Hermit's move of unit u onto an ally with number d, then the push: that
  * ally moves d forward alone when it can (its landing may start a campsite
  * card); then the turn ends.
  */
@@ -455,19 +384,10 @@ function hermitMove(fs, q, u, d, depth, ctx) {
   return v;
 }
 
-/**
- * The Hermit's card k: the best move onto an ally, then the push. (Before
- * draw: a Joker drafts as usual, and a card with no move onto an ally is a
- * normal move.)
- */
-function hermitCard(fs, q, k, depth, ctx) {
-  if (k === fs.J) return jokerValue(fs, q, END, depth, ctx);
-  const d = fs.values[k];
+/** The best Hermit move with number d; with none, `fallback()`. */
+function hermitWith(fs, q, d, depth, ctx, fallback) {
   const moves = hermitMoves(fs, q, d);
-  if (moves.length === 0) {
-    const v = bestMove(fs, q, d, false, -1, END, depth, ctx);
-    return v === undefined ? endTurn(fs, q, depth, ctx) : v;
-  }
+  if (moves.length === 0) return fallback();
   const isBetter = better(ctx, q);
   let best = worst(ctx, q);
   for (const [u] of moves) {
@@ -477,36 +397,72 @@ function hermitCard(fs, q, k, depth, ctx) {
   return best;
 }
 
-/** q uses power p on target t; k is the drawn card slot, or -1 before drawing. */
-function afterPower(fs, q, p, t, k, depth, ctx) {
-  const rec = applyPower(fs, q, p, t);
-  const free = p === HM ? hangedCard : p === HERMIT ? hermitCard : p === LOVERS && fs.loversLine ? loversCard : null;
+/**
+ * The Hermit's card k (upright): the best move onto an ally, then the push.
+ * (Before draw: a Joker drafts as usual, and a card with no move onto an ally
+ * is a normal move.)
+ */
+function hermitCard(fs, q, k, depth, ctx) {
+  if (k === fs.J) return jokerValue(fs, q, END, depth, ctx);
+  return hermitWith(fs, q, fs.values[k], depth, ctx, () => plainCard(fs, q, k, depth, ctx));
+}
+
+/**
+ * q uses held power p ({ upside, target }); k is the drawn card slot, or -1
+ * before drawing.
+ */
+function afterPower(fs, q, p, { upside, target }, k, depth, ctx) {
+  const rec = applyPower(fs, q, p, target, upside);
   let v;
-  if (!free) {
-    v = endTurn(fs, q, depth, ctx);
-  } else if (k >= 0) {
-    v = free(fs, q, k, depth, ctx);
+  if (rec.won >= 0) {
+    v = winFor(rec.won, ctx);
+  } else if (p === HM) {
+    v = k >= 0 ? hangedCard(fs, q, k, upside, depth, ctx) : expectDraw(fs, q, (c) => hangedCard(fs, q, c, upside, depth, ctx));
+  } else if (p === HERMIT) {
+    v = upside
+      ? hermitWith(fs, q, target.card, depth, ctx, () => endTurn(fs, q, depth, ctx))
+      : k >= 0 ? hermitCard(fs, q, k, depth, ctx) : expectDraw(fs, q, (c) => hermitCard(fs, q, c, depth, ctx));
+  } else if (p === TOWER && !upside) {
+    // After the step, the turn's card is played as usual.
+    v = k >= 0 ? plainCard(fs, q, k, depth, ctx) : drawAndResolve(fs, depth, ctx, { powers: false });
   } else {
-    const { counts, total } = drawCounts(fs, q);
-    v = 0;
-    for (let c = 0; c <= fs.J; c += 1) {
-      const cnt = counts[c];
-      if (!cnt) continue;
-      const refilled = takeCard(fs, q, c);
-      v += (cnt / total) * free(fs, q, c, depth, ctx);
-      returnCard(fs, q, c, refilled);
-    }
+    v = endTurn(fs, q, depth, ctx);
   }
   undoPower(fs, rec);
+  return v;
+}
+
+/** Expected value of `resolve(c)` over q's next draw. */
+function expectDraw(fs, q, resolve) {
+  const { counts, total } = drawCounts(fs, q);
+  let v = 0;
+  for (let c = 0; c <= fs.J; c += 1) {
+    const cnt = counts[c];
+    if (!cnt) continue;
+    const refilled = takeCard(fs, q, c);
+    v += (cnt / total) * resolve(c);
+    returnCard(fs, q, c, refilled);
+  }
   return v;
 }
 
 // --- root decisions -------------------------------------------------------------
 
 function engineTarget(fs, t) {
-  if (t.length === 2) return { unit: fs.ids[t[0]], target: fs.ids[t[1]] };
-  if (t.length === 1) return { unit: fs.ids[t[0]] };
+  if (t.card !== undefined) return { card: t.card };
+  if (t.to !== undefined) return { unit: fs.ids[t.u], to: t.to };
+  if (t.u !== undefined) return { unit: fs.ids[t.u] };
   return {};
+}
+
+/** The fast target for an engine argument object. */
+function fastTarget(fs, args) {
+  if (args.card !== undefined) return { card: args.card };
+  if (args.unit !== undefined) {
+    const u = fs.ids.indexOf(args.unit);
+    return args.to !== undefined ? { u, to: args.to } : { u };
+  }
+  return NO_TARGET;
 }
 
 function engineMove(fs, [u, e]) {
@@ -536,9 +492,21 @@ function rollDepth(depths, random) {
   return depths[depths.length - 1][0];
 }
 
+/** Distinct engine choices: identical effects listed once (same unit type on the same cell). */
+function distinctChoices(state, choices) {
+  const seen = new Set();
+  return choices.filter((c) => {
+    const u = c.unit ? getUnit(state, c.unit) : null;
+    const key = JSON.stringify([u?.player, u?.pos, u?.type, c.to, c.card]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /**
  * @param {{ level?: string, depths?, depth?, countCards?, temperature?,
- *           weights?, powerValues?, cache?: boolean, random?: () => number }} options
+ *           weights?, powerValues?, starValue?, cache?: boolean, random?: () => number }} options
  *   depth: a fixed look-ahead, shorthand for depths [[depth, 1]].
  */
 export function powerBot(options = {}) {
@@ -548,8 +516,8 @@ export function powerBot(options = {}) {
   if (options.depth !== undefined) level.depths = [[options.depth, 1]];
   const w = { ...DEFAULT_WEIGHTS, ...(options.weights ?? {}) };
   const pvMap = { ...DEFAULT_POWER_VALUES, ...(options.powerValues ?? {}) };
-  const sv = options.starValue ?? DEFAULT_STAR_VALUE;
   const pv = CARD_IDS.map((id) => pvMap[id] ?? 0);
+  const sv = options.starValue ?? DEFAULT_STAR_VALUE;
   const random = options.random ?? Math.random;
 
   // One look-ahead per turn: decisions later in the same turn reuse it.
@@ -557,7 +525,7 @@ export function powerBot(options = {}) {
   let startDraw = -1; // draw-pile size at a before-draw turn start, else -1
   function depthFor(state) {
     const me = state.current;
-    const midTurn = state.hanged || state.campsite || state.lovers || state.hermit || state.upsideDown;
+    const midTurn = state.hanged || state.campsite || state.hermit;
     const drawSize = state.moveDecks[me].draw.length;
     const sameTurn = startDraw >= 0 && state.drawn !== null
       && drawSize === (startDraw > 0 ? startDraw - 1 : state.config.moveDeck.length - 1);
@@ -593,53 +561,37 @@ export function powerBot(options = {}) {
     const { fs, ctx } = setup(state);
     const me = state.current;
     const opts = []; // { action, value: () => number }
-    const usePowerOptions = (k) => {
+    const k = state.drawn === null ? -1 : slotOf(fs, state.drawn);
+    const powerOptions = () => {
       const p = fs.held[me];
-      for (const t of powerTargets(fs, me, p)) {
-        opts.push({ action: { kind: 'power', args: engineTarget(fs, t) }, value: () => afterPower(fs, me, p, t, k, depth, ctx) });
+      const sides = [
+        [false, canUsePower(state) ? powerUseChoices(state) : [], 'power'],
+        [true, canUsePowerUpsideDown(state) ? powerUpsideDownChoices(state) : [], 'upsideDown'],
+      ];
+      for (const [upside, choices, kind] of sides) {
+        for (const args of distinctChoices(state, choices)) {
+          const use = { upside, target: fastTarget(fs, args) };
+          opts.push({ action: { kind, args }, value: () => afterPower(fs, me, p, use, k, depth, ctx) });
+        }
       }
-    };
-    const upsideDownOption = (k) => {
-      if (!canUsePowerUpsideDown(state)) return;
-      const p = fs.held[me];
-      opts.push({ action: { kind: 'upsideDown' }, value: () => afterUpsideDown(fs, me, p, k, depth, ctx) });
     };
 
-    if (state.lovers?.stage === 'jump') {
-      // "Line" Lovers: jump (one of the listed jumps) or stay; then the turn ends.
-      opts.push({ action: { kind: 'loversJump', jump: null }, value: () => endTurn(fs, me, depth, ctx) });
-      for (const j of loversJumps(state)) {
-        const i = fs.ids.indexOf(j.unit);
-        opts.push({
-          action: { kind: 'loversJump', jump: j },
-          value: () => {
-            const rec = jumpUnit(fs, i, j.to);
-            const v = endTurn(fs, me, depth, ctx);
-            unjump(fs, rec);
-            return v;
-          },
-        });
-      }
-    } else if (state.drawn === null) {
+    if (state.drawn === null) {
       // Before-draw timing: draw, or use the power instead.
       opts.push({ action: { kind: 'draw' }, value: () => drawAndResolve(fs, depth, ctx) });
-      if (canUsePower(state)) usePowerOptions(-1);
-      upsideDownOption(-1);
+      powerOptions();
     } else {
-      // What follows this card: the Hanged Man's forward card after its
-      // backward card (for the unit that moved; any unit after a joker), or
-      // after a campsite card met during that backward step; else the turn ends.
-      const { back, only } = cardModeOf(fs, state);
-      const idx = (id) => (id ? fs.ids.indexOf(id) : -1);
-      let cont = state.campsite && state.hanged?.stage === 'back' ? afterBack(fs, idx(state.hanged.unit)) : END;
-      // "Line" Lovers card move: the mover's jump follows (the campsite unit's, during its card).
-      if (state.lovers) cont = state.campsite ? jumpFor(idx(state.campsite.unit)) : JUMP_MOVER;
-      // An upside-down use's step (and its campsite card): the turn's card follows.
-      if (state.upsideDown?.stage === 'step') {
-        const card = state.upsideDown.card;
-        cont = resumeWith(card === null ? -1 : slotOf(fs, card));
-      }
-      if (isNumberCard(state.drawn) && state.hermit) {
+      const { back, only, enemy } = cardModeOf(fs, state);
+      // A campsite card met during a Hanged Man's backward move: the extra turn follows.
+      const cont = state.hanged?.stage === 'back' ? EXTRA : END;
+      if (isNumberCard(state.drawn) && enemy) {
+        // The upside-down Hanged Man: one of the opponent's units moves back.
+        const d = state.drawn;
+        for (const m of genMoves(fs, 1 - me, d, true, -1, true)) {
+          opts.push({ action: { kind: 'move', move: engineMove(fs, m) }, value: () => enemyBackMove(fs, me, m[0], d, depth, ctx) });
+        }
+        if (opts.length === 0) opts.push({ action: { kind: 'pass' }, value: () => endTurn(fs, me, depth, ctx) });
+      } else if (isNumberCard(state.drawn) && state.hermit) {
         // The Hermit's card: a move onto an ally, then the push.
         const d = state.drawn;
         for (const m of hermitMoves(fs, me, d)) {
@@ -652,7 +604,7 @@ export function powerBot(options = {}) {
             action: { kind: 'move', move: engineMove(fs, m) },
             value: () => {
               const rec = play(fs, me, m[0], m[1], d, back);
-              const v = afterLanding(fs, me, rec, back ? afterBack(fs, m[0]) : cont === JUMP_MOVER ? jumpFor(m[0]) : cont, depth, ctx);
+              const v = afterLanding(fs, me, rec, back ? EXTRA : cont, depth, ctx);
               unplay(fs, rec);
               return v;
             },
@@ -660,7 +612,7 @@ export function powerBot(options = {}) {
         }
         if (opts.length === 0) {
           // No move: a Hanged Man backward card with no move ends the turn.
-          opts.push({ action: { kind: 'pass' }, value: () => (back ? endTurn(fs, me, depth, ctx) : proceed(fs, me, cont === JUMP_MOVER ? END : cont, depth, ctx)) });
+          opts.push({ action: { kind: 'pass' }, value: () => (back ? endTurn(fs, me, depth, ctx) : proceed(fs, me, cont, depth, ctx)) });
         }
       } else {
         // Joker: draft one of the visible cards, or pass when drafting can't happen.
@@ -682,8 +634,7 @@ export function powerBot(options = {}) {
           });
         });
       }
-      if (canUsePower(state)) usePowerOptions(slotOf(fs, state.drawn));
-      upsideDownOption(slotOf(fs, state.drawn));
+      powerOptions();
     }
     // A single option needs no search.
     if (opts.length === 1) return [{ action: opts[0].action, value: 0 }];
@@ -705,7 +656,7 @@ export function powerBot(options = {}) {
       this.lastChoice = { options: options.length, sensible: options.filter((o) => o.value >= top - SENSIBLE_MARGIN).length };
       const choice = pick(options, level.temperature, random).action;
       check(state, choice);
-      // A power used instead of drawing ends the turn (the Hanged Man goes on mid-turn).
+      // A power used instead of drawing ends the turn (the free powers go on mid-turn).
       if (state.drawn === null && choice.kind !== 'draw') startDraw = -1;
       return choice;
     },
@@ -731,16 +682,14 @@ function check(state, a) {
   if (a.kind === 'move') {
     const ok = currentMoves(state).some((m) => m.unit === a.move.unit && (m.escort ?? null) === (a.move.escort ?? null));
     if (!ok) throw new Error(`powerBot: illegal move ${JSON.stringify(a.move)}`);
-  } else if (a.kind === 'loversJump') {
-    if (a.jump && !loversJumps(state).some((j) => j.unit === a.jump.unit && j.to === a.jump.to)) {
-      throw new Error(`powerBot: illegal Lovers jump ${JSON.stringify(a.jump)}`);
-    }
   } else if (a.kind === 'power') {
     if (!powerUseChoices(state).some((c) => sameChoice(c, a.args))) {
       throw new Error(`powerBot: illegal power use ${JSON.stringify(a.args)}`);
     }
   } else if (a.kind === 'upsideDown') {
-    if (!canUsePowerUpsideDown(state)) throw new Error('powerBot: illegal upside-down use');
+    if (!powerUpsideDownChoices(state).some((c) => sameChoice(c, a.args))) {
+      throw new Error(`powerBot: illegal upside-down use ${JSON.stringify(a.args)}`);
+    }
   }
 }
 

@@ -233,7 +233,7 @@ test("the lamp turns with the camera, so it always hangs over the viewer's side"
 
 test('what you can act on glows: your deck when drawing, then a usable power', () => {
   let model = initModel(gameWith({ 'p0-s1': 6 }));
-  model.game.held[0] = R.POWERS.TOWER;
+  model.game.held[0] = R.POWERS.DEVIL;
   const board = sceneFor(model);
   board.tick(350); // the pulse is near its peak
   const side = board.parts.sides[0];
@@ -250,7 +250,7 @@ test('what you can act on glows: your deck when drawing, then a usable power', (
 
 test('tapping your glowing power card uses it', () => {
   let model = initModel(gameWith({ 'p0-s1': 6 }));
-  model.game.held[0] = R.POWERS.TOWER;
+  model.game.held[0] = R.POWERS.LOVERS;
   model.game.held[1] = R.POWERS.HERMIT;
   const board = sceneFor(model);
   const mine = board.parts.sides[0].power.front;
@@ -262,7 +262,7 @@ test('tapping your glowing power card uses it', () => {
   assert.ok(allowed(pickAt(board, mine), model, ix));
   assert.ok(!allowed(pickAt(board, board.parts.sides[1].power.front), model, ix), "not the other player's");
   const after = update(update(model, { type: 'use-power' }), { type: 'side-upright' });
-  assert.equal(after.game.held[0], null, 'The Tower was used');
+  assert.equal(after.game.held[0], null, 'The Lovers was used');
 });
 
 test('the move target shows what the move does: a ghost of the piece, coloured by the consequence', () => {
@@ -296,10 +296,10 @@ test('the move target shows what the move does: a ghost of the piece, coloured b
 
 test('The Tower strikes the towers with lightning before the pieces there fall', () => {
   // A tower is path cell 7 (middle lane) and 14 (each end lane).
-  let model = initModel(gameWith({ 'p1-s1': 7, 'p0-s1': 2 }, { drawn: 2 }));
+  let model = initModel(gameWith({ 'p1-s1': 7, 'p0-s1': 2 }, { drawn: 2, stars: [2, 0] }));
   model.game.held[0] = R.POWERS.TOWER;
   const board = sceneFor(model);
-  model = step(board, update(model, { type: 'use-power' }), { type: 'side-upright' }, 1000);
+  model = step(board, update(model, { type: 'use-power' }), { type: 'side-upside' }, 1000);
   assert.equal(R.getUnit(model.game, 'p1-s1').pos, R.HOME, 'the unit on the tower is gone');
   assert.ok(board.parts.effects.length >= 3, 'a strike on every tower');
   for (let t = 1000; t <= 4000; t += 50) board.tick(t);
@@ -397,7 +397,7 @@ function pageOf(model) {
 test('picking a side: both sides of the held power rise, the second upside down; taps map to the sides', () => {
   let model = initModel(gameWith({ 'p0-s1': 8 }, {
     moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
-    held: [R.POWERS.TOWER, null],
+    held: [R.POWERS.LOVERS, null],
     stars: [1, 0],
   }));
   model = update(model, { type: 'draw' });
@@ -421,9 +421,9 @@ test('picking a side: both sides of the held power rise, the second upside down;
 });
 
 test('a side that cannot be used is shown faded and ignores taps', () => {
-  let model = initModel(gameWith({ 'p0-s1': 8 }, {
-    moveDecks: [{ draw: [R.JOKER, 1], discard: [] }, { draw: [1], discard: [] }],
-    held: [R.POWERS.LOVERS, null],
+  let model = initModel(gameWith({ 'p0-s1': 6, 'p0-s2': 8 }, {
+    moveDecks: [{ draw: [R.JOKER, 1], discard: [2] }, { draw: [1], discard: [] }],
+    held: [R.POWERS.HERMIT, null],
     stars: [1, 0],
   }));
   model = update(update(model, { type: 'draw' }), { type: 'use-power' });
@@ -446,7 +446,7 @@ test('each side shows its stars on a badge by the power card', () => {
 test('without stars, the upside-down card still rises, faded, and ignores taps', () => {
   let model = initModel(gameWith({ 'p0-s1': 8 }, {
     moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
-    held: [R.POWERS.TOWER, null],
+    held: [R.POWERS.LOVERS, null],
     stars: [0, 0],
   }));
   model = update(update(model, { type: 'draw' }), { type: 'use-power' });
@@ -463,7 +463,7 @@ test('without stars, the upside-down card still rises, faded, and ignores taps',
 test('picking a side: a heading, a caption under each card and the cost on the upside-down card; captions can be tapped', () => {
   let model = initModel(gameWith({ 'p0-s1': 8 }, {
     moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
-    held: [R.POWERS.TOWER, null],
+    held: [R.POWERS.LOVERS, null],
     stars: [1, 0],
   }));
   model = update(update(model, { type: 'draw' }), { type: 'use-power' });

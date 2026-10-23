@@ -5,7 +5,7 @@
 // move generation and move results match the engine on random positions.
 // Supports number-card moves (forward or backward, optionally limited to one
 // unit), campsite cells and, in fastpowers.js, the power effects. Turn flow
-// across several cards (campsite cards, the Hanged Man's forward card) lives
+// across several cards (campsite cards, the Hanged Man's extra turn) lives
 // in the bots (sim/powerbot.js).
 
 import { CARD_IDS, HOME, JOKER, geometry, otherPlayer, upsideDownCost } from '../src/rules/index.js';
@@ -55,8 +55,6 @@ export function buildFast(state) {
     escort: config.rules.escort,
     protect: config.rules.towersProtect,
     towerTurn: config.rules.towerExtraTurn,
-    loversLine: config.rules.loversLine,
-    hangedTurn: config.rules.hangedTurn,
     current: state.current,
     bonus: state.bonusTurn ? 1 : 0, // extra turns earned so far this turn
     values,
@@ -128,9 +126,9 @@ function canLand(fs, p, t, count) {
  * Distinct legal moves for player p with a card worth d, as [unit, escort]
  * pairs (escort -1 = none). Units of the same type on the same cell are
  * interchangeable, so only one of them is listed. `only` >= 0 limits the
- * moves to that unit (campsite card, Hanged Man forward card).
+ * moves to that unit (campsite card); `alone` leaves out escorts.
  */
-export function genMoves(fs, p, d, back = false, only = -1) {
+export function genMoves(fs, p, d, back = false, only = -1, alone = false) {
   const out = [];
   const seen = new Set();
   const locked = isLocked(fs, p);
@@ -146,7 +144,7 @@ export function genMoves(fs, p, d, back = false, only = -1) {
       seen.add(key);
       out.push([i, -1]);
     }
-    if (fs.escort && fs.cmd[i] && from !== HOME && from !== fs.A && !seen.has(key + 1) && canLand(fs, p, t, 2)) {
+    if (fs.escort && !alone && fs.cmd[i] && from !== HOME && from !== fs.A && !seen.has(key + 1) && canLand(fs, p, t, 2)) {
       for (let j = 0; j < fs.n; j += 1) {
         if (fs.owner[j] === p && !fs.cmd[j] && fs.pos[j] === from) {
           seen.add(key + 1);
@@ -245,23 +243,40 @@ export function undo(fs, rec) {
 }
 
 /**
- * "Line" Lovers jump target for unit i: the first occupied cell ahead in its
- * lane (start, middle or end), when it holds only the owner's units and has
- * room. Returns the path position, or -1.
+ * The Lovers: path positions unit i can jump to: the nearest ally it sees each
+ * way along its own path (the first unit met must be its own team's, with
+ * room), keeping only the nearest (both when tied).
  */
-export function loversTarget(fs, i) {
+export function loversTargets(fs, i) {
   const from = fs.pos[i];
-  if (from === HOME || from === fs.A) return -1;
-  const end = from < fs.middleFirst ? fs.middleFirst - 1 : from <= fs.middleLast ? fs.middleLast : fs.L;
+  if (from === HOME || from === fs.A) return [];
   const p = fs.owner[i];
-  for (let q = from + 1; q <= end; q += 1) {
-    const c = fs.cellIdx[p][q];
-    const mine = fs.occ[p][c];
-    const theirs = fs.occ[1 - p][c];
-    if (mine + theirs === 0) continue;
-    return theirs === 0 && mine < fs.maxPerCell ? q : -1;
+  let best = Infinity;
+  const out = [];
+  for (const dir of [1, -1]) {
+    for (let q = from + dir; q >= 1 && q <= fs.L; q += dir) {
+      const c = fs.cellIdx[p][q];
+      const mine = fs.occ[p][c];
+      const theirs = fs.occ[1 - p][c];
+      if (mine + theirs === 0) continue;
+      if (theirs === 0 && mine < fs.maxPerCell) {
+        const dist = Math.abs(q - from);
+        if (dist < best) {
+          best = dist;
+          out.length = 0;
+        }
+        if (dist === best) out.push(q);
+      }
+      break;
+    }
   }
-  return -1;
+  return out;
+}
+
+/** Can unit i step one cell forward alone (The Tower)? */
+export function canStep(fs, i) {
+  const t = dest(fs, i, 1);
+  return t >= 0 && canLand(fs, fs.owner[i], t, 1);
 }
 
 /** Probability of each card slot for player p's next draw (index J = joker). */
@@ -293,8 +308,7 @@ export function discardCounts(fs, p) {
 export function cardModeOf(fs, state) {
   const idx = (id) => (id ? fs.ids.indexOf(id) : -1);
   if (state.campsite) return { back: false, only: idx(state.campsite.unit) };
-  if (state.hanged?.stage === 'back') return { back: true, only: -1 };
-  if (state.hanged?.stage === 'forward') return { back: false, only: idx(state.hanged.unit) };
+  if (state.hanged?.stage === 'back') return { back: true, only: -1, enemy: Boolean(state.hanged.enemy) };
   if (state.hermit) return { back: false, only: -1, hermit: true };
   return { back: false, only: -1 };
 }

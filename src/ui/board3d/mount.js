@@ -26,6 +26,7 @@ export function allowed(action, model, ix) {
   if (action.type === 'use-power') return ix.canUsePower && action.player === model.game.current;
   if (action.type === 'keep') {
     if (ix.phase === 'side') return action.index === 0 ? ix.canUpright : ix.canUpsideDown;
+    if (ix.phase === 'hermit') return action.index < (ix.cards?.length ?? 0);
     return ix.phase === 'draft';
   }
   if (action.type === 'tap') {

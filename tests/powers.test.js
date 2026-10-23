@@ -2,362 +2,310 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   HOME, JOKER, POWERS,
-  canUsePower, createGame, currentMoves, draftOptions, drawCard, playDraft, playDrawnNumber,
-  powerUseChoices, usePower,
+  canUsePower, canUsePowerUpsideDown, createGame, currentMoves, drawCard, loversTargets, playDraft, playDrawnNumber,
+  powerUpsideDownChoices, powerUseChoices, upsideDownCost, usePower, usePowerUpsideDown,
 } from '../src/rules/index.js';
-import { LOCK, gameWith, pos, soldiersOut } from './helpers.js';
+import { gameWith, pos, soldiersOut } from './helpers.js';
 
-// The earlier Lovers (pairing), now a test setting.
-const PAIR = { rules: { loversLine: false } };
+// Default board: path 1-3 start lane, 4-12 middle lane, 13-14 end lane;
+// towers on 7 and 14, campsite on 5; ascending is step 15.
 
 /**
- * Player 0 holds `power` and has just drawn the first card of `deck`
- * (after-draw timing, so the power is usable now).
+ * Player 0 holds `power` with `stars`, and has just drawn the first card of
+ * `deck` (after-draw timing, so the power is usable now).
  */
-function playing(power, positions = {}, { deck = [3, 1, 2], ...extra } = {}) {
-  return drawCard(gameWith(positions, {
-    moveDecks: [{ draw: deck, discard: [] }, { draw: [1], discard: [] }],
+function playing(power, positions = {}, { deck = [3, 1, 2], discard = [], stars = [9, 0], draw = true, ...extra } = {}) {
+  const g = gameWith(positions, {
+    moveDecks: [{ draw: deck, discard }, { draw: [1], discard: [] }],
     held: [power, null],
-    powerDeck: [POWERS.TOWER, POWERS.HERMIT],
+    powerDeck: [POWERS.DEVIL, POWERS.HERMIT],
+    stars,
     ...extra,
-  }));
+  });
+  return draw ? drawCard(g) : g;
 }
 
-// --- The Hanged Man (free power) ---
-// These cover the earlier forward-card version (rules.hangedTurn off); the
-// extra-turn version (the default) is tested at the end of this file.
-const FWD = { rules: { hangedTurn: false } };
-// Default board: path 1-3 start lane, 4-12 middle lane, 13-14 end lane;
-// towers on 7 and 14, campsite on 5.
+const sorted = (xs) => [...xs].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 
-test('Hanged Man: the drawn card is kept and will move backward', () => {
-  const g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11 }, { config: FWD }));
-  assert.equal(g.current, 0);
-  assert.equal(g.drawn, 3);
-  assert.deepEqual(g.hanged, { stage: 'back', unit: null });
+test('upside-down costs: Tower 2, Lovers 1, Devil 3, Hanged Man 4, Hermit 1', () => {
+  assert.equal(upsideDownCost(POWERS.TOWER), 2);
+  assert.equal(upsideDownCost(POWERS.LOVERS), 1);
+  assert.equal(upsideDownCost(POWERS.DEVIL), 3);
+  assert.equal(upsideDownCost(POWERS.HANGED_MAN), 4);
+  assert.equal(upsideDownCost(POWERS.HERMIT), 1);
+});
+
+test('upside down needs enough stars; the cost is paid and the card goes to the bottom', () => {
+  assert.ok(!canUsePowerUpsideDown(playing(POWERS.DEVIL, { 'p0-s1': 6 }, { stars: [2, 9] })));
+  const g = usePowerUpsideDown(playing(POWERS.DEVIL, { 'p0-s1': 6 }, { stars: [5, 0] }), { unit: 'p0-s1' });
+  assert.deepEqual(g.stars, [2, 0]);
   assert.equal(g.held[0], null);
-  assert.deepEqual(g.powerDeck, [POWERS.TOWER, POWERS.HERMIT, POWERS.HANGED_MAN]);
-  assert.ok(!canUsePower(g));
-});
-
-test('Hanged Man: back by the card, then a new card moves the same unit forward, then the turn ends', () => {
-  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11, 'p0-s2': 2 }, { config: FWD }));
-  g = playDrawnNumber(g, { unit: 'p0-s1' });
-  assert.equal(pos(g, 'p0-s1'), 8);
-  assert.equal(g.current, 0);
-  assert.equal(g.drawn, null);
-  assert.deepEqual(g.hanged, { stage: 'forward', unit: 'p0-s1' });
-  assert.ok(!canUsePower(g));
-  g = drawCard(g); // draws 1
-  assert.deepEqual(currentMoves(g).map((m) => m.unit), ['p0-s1'], 'only the same unit moves forward');
-  g = playDrawnNumber(g, { unit: 'p0-s1' });
-  assert.equal(pos(g, 'p0-s1'), 9);
-  assert.equal(g.current, 1, 'no extra turn');
-  assert.equal(g.hanged, null);
-});
-
-test('Hanged Man: a backward move can kill', () => {
-  const g = playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11, 'p1-s1': 8 }, { config: FWD })), { unit: 'p0-s1' });
-  assert.equal(pos(g, 'p0-s1'), 8);
-  assert.equal(pos(g, 'p1-s1'), HOME);
-});
-
-test('Hanged Man: going back past the first cell sends the unit home; the forward card enters it again', () => {
-  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 2 }, { deck: [3, 2], config: FWD }));
-  g = playDrawnNumber(g, { unit: 'p0-s1' });
-  assert.equal(pos(g, 'p0-s1'), HOME);
-  g = playDrawnNumber(drawCard(g), { unit: 'p0-s1' });
-  assert.equal(pos(g, 'p0-s1'), 2);
-  assert.equal(g.current, 1);
-});
-
-test('Hanged Man: backward moves respect towers', () => {
-  const g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10, 'p0-s2': 11, 'p1-s1': 7 }, { config: FWD }));
-  assert.ok(!currentMoves(g).some((m) => m.unit === 'p0-s1'));
-  assert.ok(currentMoves(g).some((m) => m.unit === 'p0-s2'));
-});
-
-test('Hanged Man: you must move backward when you can', () => {
-  assert.throws(() => playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11 }, { config: FWD })), null));
-});
-
-test('Hanged Man (after draw): it cannot be used on a number card with no backward move', () => {
-  const g = playing(POWERS.HANGED_MAN, {}, { config: FWD }); // every unit at home, drew a 3
-  assert.ok(!canUsePower(g));
-  assert.deepEqual(powerUseChoices(g), []);
-  assert.throws(() => usePower(g));
-  const blocked = playing(POWERS.HANGED_MAN, { 'p0-s1': 10, 'p1-s1': 7 }, { config: FWD }); // 10 - 3 is the opponent's tower
-  assert.ok(!canUsePower(blocked));
-  assert.ok(canUsePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 }, { config: FWD })));
-});
-
-test('Hanged Man (after draw): it can not be used on a drawn joker', () => {
-  assert.ok(!canUsePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 }, { deck: [JOKER, 2], config: FWD })));
-});
-
-test('Hanged Man (before draw): a card with no backward move spends it and ends the turn', () => {
-  const base = createGame({ seed: 1, firstPlayer: 0, config: { powerTiming: 'beforeDraw', ...FWD } });
-  let g = {
-    ...base,
-    moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
-    held: [POWERS.HANGED_MAN, null],
-  };
-  assert.ok(canUsePower(g));
-  g = usePower(g); // every unit at home: no backward move
-  assert.equal(currentMoves(g).length, 0);
-  g = playDrawnNumber(g, null);
-  assert.equal(g.current, 1);
-  assert.equal(g.held[0], null);
-  assert.equal(g.hanged, null);
-  assert.deepEqual(g.moveDecks[0].draw, [1], 'no forward card is drawn');
-});
-
-test('Hanged Man (before draw) on a joker: it drafts as usual, with no forward card', () => {
-  const base = gameWith({ 'p0-s1': 10 }, {
-    config: { powerTiming: 'beforeDraw', ...FWD },
-    moveDecks: [{ draw: [JOKER, 2], discard: [] }, { draw: [1], discard: [] }],
-    held: [POWERS.HANGED_MAN, null],
-    powerDeck: [POWERS.TOWER, POWERS.HERMIT],
-  });
-  let g = usePower(base);
-  assert.equal(g.drawn, JOKER);
-  assert.deepEqual(draftOptions(g), [POWERS.TOWER, POWERS.HERMIT]);
-  g = playDraft(g, 0);
-  assert.equal(g.held[0], POWERS.TOWER);
-  assert.equal(g.current, 1);
-  assert.equal(g.hanged, null);
-  assert.equal(pos(g, 'p0-s1'), 10);
-  assert.deepEqual(g.moveDecks[0].draw, [2], 'no forward card is drawn');
-});
-
-test('Hanged Man: a joker as the forward card drafts instead of moving', () => {
-  let g = playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11 }, { deck: [3, JOKER], config: FWD })), { unit: 'p0-s1' });
-  g = drawCard(g);
-  assert.equal(g.drawn, JOKER);
-  g = playDraft(g, 1);
-  assert.equal(g.held[0], POWERS.HERMIT);
-  assert.equal(pos(g, 'p0-s1'), 8);
-  assert.equal(g.current, 1);
-});
-
-test('Hanged Man: if the forward move is not valid, the unit stays', () => {
-  let g = playDrawnNumber(usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 9, 'p1-s1': 7 }, { deck: [3, 1], config: FWD })), { unit: 'p0-s1' });
-  assert.equal(pos(g, 'p0-s1'), 6);
-  g = drawCard(g); // 1 onto the tower the opponent holds
-  assert.equal(currentMoves(g).length, 0);
-  g = playDrawnNumber(g, null);
-  assert.equal(pos(g, 'p0-s1'), 6);
-  assert.equal(g.current, 1);
-});
-
-test('Hanged Man before drawing: you draw after using it; that card moves backward, the next forward', () => {
-  const base = createGame({ seed: 1, firstPlayer: 0, config: { powerTiming: 'beforeDraw', ...FWD } });
-  let g = {
-    ...base,
-    units: base.units.map((u) => (u.id === 'p0-s1' ? { ...u, pos: 11 } : u)),
-    moveDecks: [{ draw: [3, 1], discard: [] }, { draw: [1], discard: [] }],
-    held: [POWERS.HANGED_MAN, null],
-  };
-  assert.ok(canUsePower(g));
-  g = usePower(g);
-  assert.equal(g.drawn, 3);
-  assert.deepEqual(g.hanged, { stage: 'back', unit: null });
-  g = playDrawnNumber(g, { unit: 'p0-s1' });
-  assert.equal(pos(g, 'p0-s1'), 8);
-  g = playDrawnNumber(drawCard(g), { unit: 'p0-s1' });
-  assert.equal(pos(g, 'p0-s1'), 9);
-  assert.equal(g.current, 1);
-});
-
-test('Hanged Man: the commander can bring its escort on both moves', () => {
-  const units = { ...soldiersOut(0, [11, 1, 2, 3, 6]), 'p0-c1': 11 };
-  let g = usePower(playing(POWERS.HANGED_MAN, units, { config: FWD }));
-  g = playDrawnNumber(g, { unit: 'p0-c1', escort: 'p0-s1' });
-  assert.equal(pos(g, 'p0-c1'), 8);
-  assert.equal(pos(g, 'p0-s1'), 8);
-  g = drawCard(g);
-  assert.ok(currentMoves(g).some((m) => m.unit === 'p0-c1' && m.escort === 'p0-s1'));
-  assert.ok(!currentMoves(g).some((m) => m.unit === 'p0-s1'));
-  g = playDrawnNumber(g, { unit: 'p0-c1', escort: 'p0-s1' });
-  assert.equal(pos(g, 'p0-c1'), 9);
-  assert.equal(pos(g, 'p0-s1'), 9);
-});
-
-test('Hanged Man: a backward move onto the campsite triggers it before the forward card', () => {
-  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 8 }, { deck: [3, 1], config: FWD }));
-  g = playDrawnNumber(g, { unit: 'p0-s1' });
-  assert.equal(pos(g, 'p0-s1'), 5);
-  assert.deepEqual(g.campsite, { unit: 'p0-s1' });
-  assert.equal(g.drawn, 3, 'the only card in the discard pile');
-  g = playDrawnNumber(g, { unit: 'p0-s1' }); // campsite card: forward 3
-  assert.equal(pos(g, 'p0-s1'), 8);
-  assert.deepEqual(g.hanged, { stage: 'forward', unit: 'p0-s1' });
-  g = playDrawnNumber(drawCard(g), { unit: 'p0-s1' });
-  assert.equal(pos(g, 'p0-s1'), 9);
-  assert.equal(g.current, 1);
-});
-
-// --- The Lovers ---
-
-test('Lovers (pairing): move your middle-lane unit onto a lone ally there', () => {
-  const g = playing(POWERS.LOVERS, { 'p0-s1': 5, 'p0-s2': 11 }, { config: PAIR });
-  const after = usePower(g, { unit: 'p0-s1', target: 'p0-s2' });
-  assert.equal(pos(after, 'p0-s1'), 11);
-  assert.equal(after.current, 1);
-});
-
-test('Lovers (pairing) works in either direction', () => {
-  const g = playing(POWERS.LOVERS, { 'p0-s1': 5, 'p0-s2': 11 }, { config: PAIR });
-  const after = usePower(g, { unit: 'p0-s2', target: 'p0-s1' });
-  assert.equal(pos(after, 'p0-s2'), 5);
-});
-
-test('Lovers: the ally must be alone, in the middle lane, and yours', () => {
-  const g = playing(POWERS.LOVERS, {
-    'p0-s1': 5,
-    'p0-s2': 9, 'p0-s3': 9, // a pair, not alone
-    'p0-s4': 2, // private lane
-    'p1-s1': 11, // enemy
-  }, { config: PAIR });
-  const targets = new Set(powerUseChoices(g).map((c) => c.target));
-  assert.deepEqual([...targets], ['p0-s1']); // the only lone ally in the middle lane
-  assert.throws(() => usePower(g, { unit: 'p0-s1', target: 'p0-s2' }));
-  assert.throws(() => usePower(g, { unit: 'p0-s1', target: 'p0-s4' }));
-  assert.throws(() => usePower(g, { unit: 'p0-s1', target: 'p1-s1' }));
-});
-
-test('Lovers with no valid pair can still be used, to no effect', () => {
-  const g = playing(POWERS.LOVERS, { 'p0-s1': 5, 'p0-s4': 2 }, { config: PAIR });
-  assert.deepEqual(powerUseChoices(g), [{}]);
-  const after = usePower(g, {});
-  assert.equal(pos(after, 'p0-s1'), 5);
-  assert.equal(after.current, 1);
-  assert.equal(after.held[0], null);
-});
-
-test('Lovers: a commander in the middle lane can be moved while soldiers are home', () => {
-  const g = playing(POWERS.LOVERS, { 'p0-c1': 5, 'p0-s1': 11 }, { config: { rules: { ...LOCK.rules, ...PAIR.rules } } }); // soldiers still home
-  assert.ok(powerUseChoices(g).some((c) => c.unit === 'p0-c1'));
-});
-
-// --- The Devil ---
-
-test('Devil: middle-lane units move one cell toward it; colliders die', () => {
-  const g = playing(POWERS.DEVIL, {
-    'p0-s1': 8, // the Devil (middle index 4)
-    'p0-s2': 7, // adjacent ally -> dies
-    'p1-s1': 9, // adjacent enemy -> dies
-    'p1-s2': 11, // two away -> moves to 10
-    'p0-s3': 5, // three away -> moves to 6
-  });
-  const after = usePower(g, { unit: 'p0-s1' });
-  assert.equal(pos(after, 'p0-s1'), 8);
-  assert.equal(pos(after, 'p0-s2'), HOME);
-  assert.equal(pos(after, 'p1-s1'), HOME);
-  assert.equal(pos(after, 'p1-s2'), 10);
-  assert.equal(pos(after, 'p0-s3'), 6);
-});
-
-test("Devil: a unit sharing the Devil's cell dies", () => {
-  const g = playing(POWERS.DEVIL, { 'p0-s1': 6, 'p0-s2': 6 });
-  const after = usePower(g, { unit: 'p0-s1' });
-  assert.equal(pos(after, 'p0-s1'), 6);
-  assert.equal(pos(after, 'p0-s2'), HOME);
-});
-
-test('Devil: private lanes are untouched; towers do not protect', () => {
-  const g = playing(POWERS.DEVIL, {
-    'p0-s1': 11, 'p0-s2': 3, 'p1-s1': 13, 'p1-s2': 8, // p1-s2 on the middle tower
-  });
-  const after = usePower(g, { unit: 'p0-s1' });
-  assert.equal(pos(after, 'p0-s2'), 3);
-  assert.equal(pos(after, 'p1-s1'), 13);
-  assert.equal(pos(after, 'p1-s2'), 9);
-});
-
-test('Devil: must be one of your units in the middle lane; with none it does nothing', () => {
-  const g = playing(POWERS.DEVIL, { 'p0-s1': 3, 'p1-s1': 6 });
-  assert.deepEqual(powerUseChoices(g), [{}]);
-  assert.throws(() => usePower(g, { unit: 'p1-s1' }));
-  assert.equal(pos(usePower(g, {}), 'p1-s1'), 6);
-});
-
-test('Devil: with a valid unit, a target must be picked', () => {
-  const g = playing(POWERS.DEVIL, { 'p0-s1': 8 });
-  assert.throws(() => usePower(g, {}));
+  assert.deepEqual(g.powerDeck, [POWERS.DEVIL, POWERS.HERMIT, POWERS.DEVIL]);
 });
 
 // --- The Tower ---
 
-test('Tower: destroys every unit on every tower, both teams', () => {
-  const g = playing(POWERS.TOWER, {
-    'p0-s1': 7, 'p0-s2': 14, 'p1-s1': 7, 'p1-s2': 14, 'p0-s4': 4,
-  });
-  const after = usePower(g);
-  for (const id of ['p0-s1', 'p0-s2', 'p1-s1', 'p1-s2']) {
-    assert.equal(pos(after, id), HOME, id);
-  }
-  assert.equal(pos(after, 'p0-s4'), 4);
+test('Tower upright: any unit on a tower steps one cell forward, then the card is played as usual', () => {
+  let g = playing(POWERS.TOWER, { 'p0-s1': 7, 'p1-s1': 14, 'p0-s2': 2 });
+  assert.deepEqual(sorted(powerUseChoices(g)), sorted([{ unit: 'p0-s1' }, { unit: 'p1-s1' }]));
+  g = usePower(g, { unit: 'p0-s1' });
+  assert.equal(pos(g, 'p0-s1'), 8);
+  assert.equal(g.current, 0);
+  assert.equal(g.drawn, 3);
+  assert.equal(g.held[0], null);
+  assert.ok(!canUsePower(g));
+  g = playDrawnNumber(g, { unit: 'p0-s2' });
+  assert.equal(pos(g, 'p0-s2'), 5, 'the card moves any unit');
 });
 
-// The Hermit: see hermit.test.js.
+test("Tower upright: an enemy unit on its last tower steps into ascension; a step captures", () => {
+  const up = usePower(playing(POWERS.TOWER, { 'p1-s1': 14 }), { unit: 'p1-s1' });
+  assert.equal(pos(up, 'p1-s1'), 15);
+  const cap = usePower(playing(POWERS.TOWER, { 'p1-s1': 7, 'p0-s1': 8 }, { stars: [0, 0] }), { unit: 'p1-s1' });
+  assert.equal(pos(cap, 'p1-s1'), 8);
+  assert.equal(pos(cap, 'p0-s1'), HOME);
+  assert.deepEqual(cap.stars, [1, 0]);
+});
 
-// --- no-effect use ---
+test('Tower upright: stepping the last enemy unit into ascension ends the game for them', () => {
+  const all = { ...soldiersOut(1, [15, 15, 15, 15, 15]), 'p1-c1': 14 };
+  const g = usePower(playing(POWERS.TOWER, all), { unit: 'p1-c1' });
+  assert.equal(g.winner, 1);
+});
+
+test('Tower upright: the step needs room and follows tower protection; no step: it cannot be used', () => {
+  // p0-s1 on 7 can't step onto 8 (two allies there).
+  const full = playing(POWERS.TOWER, { 'p0-s1': 7, 'p0-s2': 8, 'p0-s3': 8 });
+  assert.ok(!canUsePower(full));
+  assert.ok(!canUsePower(playing(POWERS.TOWER, { 'p0-s1': 5 })), 'nobody on a tower');
+  assert.ok(!canUsePower(playing(POWERS.TOWER, { 'p0-s1': 7 }, { deck: [JOKER, 1] })), 'free power: not on a drawn Joker');
+});
+
+test('Tower upright: the step does not trigger the campsite', () => {
+  const g = usePower(playing(POWERS.TOWER, { 'p0-s1': 14, 'p1-s1': 7 }, { config: { board: { campsites: [8] } } }), { unit: 'p1-s1' });
+  assert.equal(pos(g, 'p1-s1'), 8);
+  assert.equal(g.campsite, null);
+  assert.equal(g.drawn, 3);
+});
+
+test('Tower upright, before draw: step first, then the card is drawn', () => {
+  let g = playing(POWERS.TOWER, { 'p0-s1': 7 }, { draw: false, config: { powerTiming: 'beforeDraw' } });
+  assert.ok(canUsePower(g));
+  g = usePower(g, { unit: 'p0-s1' });
+  assert.equal(pos(g, 'p0-s1'), 8);
+  assert.equal(g.drawn, 3);
+});
+
+test('Tower upside down (2 stars): destroys every unit on every tower, both teams; the card is spent', () => {
+  let g = playing(POWERS.TOWER, { 'p0-s1': 7, 'p0-s2': 14, 'p1-s1': 7, 'p1-s2': 14, 'p0-s4': 4 }, { stars: [2, 0], config: { rules: { towersProtect: false } } });
+  g = usePowerUpsideDown(g);
+  for (const id of ['p0-s1', 'p0-s2', 'p1-s1', 'p1-s2']) assert.equal(pos(g, id), HOME, id);
+  assert.equal(pos(g, 'p0-s4'), 4);
+  assert.deepEqual(g.stars, [2, 2], 'paid 2, gained 2; the opponent gained 2');
+  assert.equal(g.current, 1);
+});
+
+test('Tower upside down can be used on a drawn Joker (the Joker is spent)', () => {
+  const g = playing(POWERS.TOWER, { 'p0-s1': 7 }, { deck: [JOKER, 1], stars: [2, 0] });
+  assert.ok(canUsePowerUpsideDown(g));
+  assert.equal(usePowerUpsideDown(g).current, 1);
+});
+
+// --- The Lovers ---
+
+test('Lovers: a unit sees the nearest unit each way along its whole path; it must be an ally', () => {
+  const g = playing(POWERS.LOVERS, { 'p0-s1': 2, 'p0-s2': 6, 'p0-s3': 13 });
+  assert.deepEqual(loversTargets(g, 'p0-s2'), [2], '2 is 4 behind, 13 is 7 ahead: the nearest');
+  assert.deepEqual(loversTargets(g, 'p0-s1'), [6], 'across lanes');
+  const blocked = playing(POWERS.LOVERS, { 'p0-s1': 2, 'p1-s1': 4, 'p0-s2': 6 });
+  assert.deepEqual(loversTargets(blocked, 'p0-s2'), [], 'an enemy at 4 blocks the view back; nothing ahead');
+  assert.deepEqual(loversTargets(blocked, 'p0-s1'), [], 'no jumping past an enemy');
+  const tie = playing(POWERS.LOVERS, { 'p0-s1': 4, 'p0-s2': 6, 'p0-s3': 8 });
+  assert.deepEqual(loversTargets(tie, 'p0-s2').sort((a, b) => a - b), [4, 8], 'equally near: either');
+});
+
+test("Lovers: a full ally cell can't be jumped onto, and the unit doesn't look past it", () => {
+  const g = playing(POWERS.LOVERS, { 'p0-s1': 6, 'p0-s2': 8, 'p0-s3': 8, 'p0-s4': 10 });
+  assert.deepEqual(loversTargets(g, 'p0-s1'), []);
+});
+
+test('Lovers upright: jump instead of the move; the card is spent; usable on a drawn Joker', () => {
+  let g = playing(POWERS.LOVERS, { 'p0-s1': 2, 'p0-s2': 6 });
+  assert.deepEqual(sorted(powerUseChoices(g)), sorted([{ unit: 'p0-s1', to: 6 }, { unit: 'p0-s2', to: 2 }]));
+  g = usePower(g, { unit: 'p0-s1', to: 6 });
+  assert.equal(pos(g, 'p0-s1'), 6);
+  assert.equal(g.current, 1);
+  assert.deepEqual(g.moveDecks[0].discard, [3]);
+  const joker = playing(POWERS.LOVERS, { 'p0-s1': 2, 'p0-s2': 6 }, { deck: [JOKER, 1] });
+  assert.ok(canUsePower(joker));
+});
+
+test('Lovers: a jump onto the campsite does not trigger it and never captures', () => {
+  const g = usePower(playing(POWERS.LOVERS, { 'p0-s1': 9, 'p0-s2': 5 }), { unit: 'p0-s1', to: 5 });
+  assert.equal(pos(g, 'p0-s1'), 5);
+  assert.equal(g.campsite, null);
+  assert.equal(g.current, 1);
+});
+
+test('Lovers upside down (1 star): an enemy unit jumps to its own nearest ally; your units block its sight', () => {
+  let g = playing(POWERS.LOVERS, { 'p1-s1': 10, 'p1-s2': 4, 'p0-s1': 2 }, { stars: [1, 0] });
+  assert.deepEqual(sorted(powerUpsideDownChoices(g)), sorted([{ unit: 'p1-s1', to: 4 }, { unit: 'p1-s2', to: 10 }]));
+  g = usePowerUpsideDown(g, { unit: 'p1-s1', to: 4 });
+  assert.equal(pos(g, 'p1-s1'), 4);
+  assert.deepEqual(g.stars, [0, 0]);
+  const blocked = playing(POWERS.LOVERS, { 'p1-s1': 10, 'p0-s1': 6, 'p1-s2': 4 }, { stars: [1, 0] });
+  assert.deepEqual(powerUpsideDownChoices(blocked), [{}], 'no enemy can jump: usable to no effect');
+});
+
+// --- The Devil ---
+
+test('Devil upright: units just before and after one of your units die, both teams; anywhere on the board', () => {
+  let g = playing(POWERS.DEVIL, { 'p0-s1': 8, 'p0-s2': 9, 'p1-s1': 7, 'p1-s2': 10, 'p0-s3': 2 }, { stars: [0, 0] });
+  g = usePower(g, { unit: 'p0-s1' });
+  assert.equal(pos(g, 'p0-s1'), 8, 'the Devil unit survives');
+  assert.equal(pos(g, 'p0-s2'), HOME);
+  assert.equal(pos(g, 'p1-s1'), HOME, 'towers do not protect');
+  assert.equal(pos(g, 'p1-s2'), 10, 'two cells away: untouched');
+  assert.deepEqual(g.stars, [1, 1]);
+  assert.equal(g.current, 1);
+
+  const priv = usePower(playing(POWERS.DEVIL, { 'p0-s1': 2, 'p0-s2': 1, 'p0-s3': 3, 'p1-s1': 2 }), { unit: 'p0-s1' });
+  assert.equal(pos(priv, 'p0-s2'), HOME);
+  assert.equal(pos(priv, 'p0-s3'), HOME);
+  assert.equal(pos(priv, 'p1-s1'), 2, "the other team's start lane is a different cell");
+});
+
+test("Devil upright: a unit sharing the Devil's cell dies; only your own units can be chosen", () => {
+  const g = playing(POWERS.DEVIL, { 'p0-s1': 6, 'p0-s2': 6, 'p1-s1': 9 });
+  assert.deepEqual(sorted(powerUseChoices(g)), sorted([{ unit: 'p0-s1' }, { unit: 'p0-s2' }]));
+  assert.equal(pos(usePower(g, { unit: 'p0-s1' }), 'p0-s2'), HOME);
+});
+
+test('Devil upside down (3 stars): any middle-lane unit; every unit on the board moves one cell toward it', () => {
+  let g = playing(POWERS.DEVIL, {
+    'p1-s1': 8, // the Devil (an enemy unit)
+    'p0-s1': 2, 'p0-s2': 7, 'p0-s3': 13, 'p1-s2': 10, 'p1-s3': 9, 'p0-s4': 8,
+  }, { stars: [3, 0] });
+  assert.ok(powerUpsideDownChoices(g).some((c) => c.unit === 'p1-s1'));
+  assert.ok(!powerUpsideDownChoices(g).some((c) => c.unit === 'p0-s1'), 'only units in the middle lane');
+  g = usePowerUpsideDown(g, { unit: 'p1-s1' });
+  assert.equal(pos(g, 'p1-s1'), 8);
+  assert.equal(pos(g, 'p0-s1'), 3, 'start lane: one cell forward');
+  assert.equal(pos(g, 'p0-s2'), HOME, 'reaches it: dies');
+  assert.equal(pos(g, 'p1-s3'), HOME, 'reaches it: dies');
+  assert.equal(pos(g, 'p0-s4'), HOME, 'shared its cell: dies');
+  assert.equal(pos(g, 'p1-s2'), 9);
+  assert.equal(pos(g, 'p0-s3'), 12, 'end lane: one cell back');
+  assert.deepEqual(g.stars, [2, 1]);
+});
+
+// --- The Hanged Man ---
+
+test('Hanged Man upright: one of your units moves back by the card, then an extra turn', () => {
+  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11, 'p1-s1': 8 }, { stars: [0, 0] }));
+  assert.deepEqual(g.hanged, { stage: 'back', unit: null, enemy: false });
+  g = playDrawnNumber(g, { unit: 'p0-s1' });
+  assert.equal(pos(g, 'p0-s1'), 8);
+  assert.equal(pos(g, 'p1-s1'), HOME);
+  assert.deepEqual(g.stars, [0, 1]);
+  assert.equal(g.current, 0);
+  assert.equal(g.hanged, null);
+  assert.equal(g.drawn, null);
+});
+
+test('Hanged Man upright: no backward move after draw, or a drawn Joker: it cannot be used', () => {
+  assert.ok(!canUsePower(playing(POWERS.HANGED_MAN, {})));
+  assert.ok(!canUsePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 }, { deck: [JOKER, 2] })));
+  assert.ok(!canUsePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10, 'p1-s1': 7 })), "10 - 3 is the opponent's tower");
+});
+
+test('Hanged Man before draw: a Joker drafts and the turn ends, no extra turn', () => {
+  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 }, { deck: [JOKER, 2], draw: false, config: { powerTiming: 'beforeDraw' } }));
+  g = playDraft(g, 0);
+  assert.equal(g.current, 1);
+});
+
+test('Hanged Man upside down (4 stars): an enemy unit moves back by the card, then you take an extra turn', () => {
+  let g = playing(POWERS.HANGED_MAN, { 'p1-s1': 9, 'p0-s1': 6, 'p0-s2': 11, 'p1-s2': 10 }, { stars: [4, 0] });
+  assert.ok(canUsePowerUpsideDown(g));
+  g = usePowerUpsideDown(g);
+  assert.deepEqual(g.stars, [0, 0]);
+  assert.deepEqual(g.hanged, { stage: 'back', unit: null, enemy: true });
+  // 10 - 3 = 7 is a tower held by... nobody: allowed; 9 - 3 = 6 holds your unit: a capture.
+  assert.deepEqual(currentMoves(g).map((m) => m.unit).sort(), ['p1-s1', 'p1-s2'], "only the opponent's units on the board");
+  g = playDrawnNumber(g, { unit: 'p1-s1' });
+  assert.equal(pos(g, 'p1-s1'), 6);
+  assert.equal(pos(g, 'p0-s1'), HOME, 'it captures your unit');
+  assert.deepEqual(g.stars, [1, 0], 'your killed unit gives you a star');
+  assert.equal(g.current, 0, 'extra turn for you');
+});
+
+test('Hanged Man upside down: past its first cell the enemy unit goes home (no star); no campsite', () => {
+  const home = playDrawnNumber(usePowerUpsideDown(playing(POWERS.HANGED_MAN, { 'p1-s1': 2 }, { stars: [4, 0] })), { unit: 'p1-s1' });
+  assert.equal(pos(home, 'p1-s1'), HOME);
+  assert.deepEqual(home.stars, [0, 0]);
+  const camp = playDrawnNumber(usePowerUpsideDown(playing(POWERS.HANGED_MAN, { 'p1-s1': 8 }, { stars: [4, 0], discard: [2] })), { unit: 'p1-s1' });
+  assert.equal(pos(camp, 'p1-s1'), 5);
+  assert.equal(camp.campsite, null);
+  assert.equal(camp.current, 0);
+});
+
+test('Hanged Man upside down: no enemy unit can move back: it cannot be used', () => {
+  assert.ok(!canUsePowerUpsideDown(playing(POWERS.HANGED_MAN, { 'p0-s1': 10 }, { stars: [4, 0] })));
+});
+
+// --- The Hermit (upright: see hermit.test.js) ---
+
+test('Hermit upside down (1 star): a number from your discard pile stands in for the card', () => {
+  // Discard [1, 4] plus the drawn 3. From 6: 1 -> 7 (no ally), 3 -> 9 (no ally), 4 -> 10 (ally).
+  let g = playing(POWERS.HERMIT, { 'p0-s1': 6, 'p0-s2': 10 }, { discard: [1, 4, JOKER], stars: [1, 0] });
+  assert.deepEqual(powerUpsideDownChoices(g), [{ card: 4 }]);
+  g = usePowerUpsideDown(g, { card: 4 });
+  assert.deepEqual(g.hermit, { stage: 'move', steps: 4 });
+  assert.equal(g.drawn, 4);
+  assert.deepEqual(currentMoves(g), [{ unit: 'p0-s1' }]);
+  g = playDrawnNumber(g, { unit: 'p0-s1' });
+  assert.equal(pos(g, 'p0-s1'), 10);
+  assert.equal(pos(g, 'p0-s2'), 14, 'the ally copies the 4');
+  assert.deepEqual(g.moveDecks[0].discard, [1, 4, JOKER, 3], 'the pile is unchanged');
+  assert.equal(g.current, 1);
+});
+
+test('Hermit upside down works on a drawn Joker; not when no pile number reaches an ally', () => {
+  const joker = playing(POWERS.HERMIT, { 'p0-s1': 6, 'p0-s2': 8 }, { deck: [JOKER, 1], discard: [2], stars: [1, 0] });
+  assert.deepEqual(powerUpsideDownChoices(joker), [{ card: 2 }]);
+  const none = playing(POWERS.HERMIT, { 'p0-s1': 6 }, { discard: [2], stars: [1, 0] });
+  assert.ok(!canUsePowerUpsideDown(none));
+});
+
+// --- general ---
 
 test('a power with nothing to hit can still be used to skip the drawn card', () => {
-  const g = playing(POWERS.TOWER, { 'p0-s1': 5 });
-  const after = usePower(g);
-  assert.equal(pos(after, 'p0-s1'), 5);
-  assert.equal(after.current, 1);
-  assert.deepEqual(after.moveDecks[0].discard, [3]);
+  const g = usePower(playing(POWERS.DEVIL, {}));
+  assert.equal(g.current, 1);
+  assert.deepEqual(g.moveDecks[0].discard, [3]);
 });
 
-// --- dud cards (test-only) ---
-
-test('a dud is drafted and held like a power but can never be used', () => {
+test('a dud is drafted and held like a power but can never be used, either way up', () => {
   let g = drawCard(gameWith({ 'p0-s1': 3 }, {
     config: { powerDeck: ['dud', 'dud', 'devil'] },
     moveDecks: [{ draw: [JOKER, 2], discard: [] }, { draw: [1, 1], discard: [] }],
     powerDeck: ['dud', 'devil', 'dud'],
+    stars: [9, 9],
   }));
   g = playDraft(g, 0);
   assert.equal(g.held[0], 'dud');
-  assert.deepEqual(g.powerDeck, ['dud', 'devil']);
   g = playDrawnNumber(drawCard(g), { unit: 'p1-s1' }); // opponent's turn
   g = drawCard(g);
   assert.ok(!canUsePower(g));
+  assert.ok(!canUsePowerUpsideDown(g));
   assert.deepEqual(powerUseChoices(g), []);
 });
 
-// --- rules.hangedTurn: the Hanged Man's bonus is an extra turn ---
-
-const EXTRA = { rules: { hangedTurn: true } };
-
-test('Hanged Man (extra turn): back by the card, then the same player takes a whole new turn', () => {
-  let g = usePower(playing(POWERS.HANGED_MAN, { 'p0-s1': 11 }, { config: EXTRA }));
-  g = playDrawnNumber(g, { unit: 'p0-s1' });
-  assert.equal(pos(g, 'p0-s1'), 8);
-  assert.equal(g.current, 0);
-  assert.equal(g.drawn, null);
-  assert.equal(g.hanged, null);
-  g = drawCard(g);
-  assert.equal(g.drawn, 1);
-  assert.ok(currentMoves(g).length > 1, 'any unit can move on the extra turn');
-  g = playDrawnNumber(g, { unit: 'p0-s2' });
-  assert.equal(g.current, 1);
+test('with upside-down powers switched off, no power can be used upside down', () => {
+  assert.ok(!canUsePowerUpsideDown(playing(POWERS.DEVIL, { 'p0-s1': 6 }, { config: { rules: { upsideDown: false } } })));
 });
 
-test('Hanged Man (extra turn): no backward move after draw: it cannot be used', () => {
-  assert.ok(!canUsePower(playing(POWERS.HANGED_MAN, {}, { config: EXTRA })));
-});
-
-test('Hanged Man (extra turn, before draw): a Joker drafts and the turn ends, no extra turn', () => {
-  let g = usePower(gameWith({ 'p0-s1': 10 }, {
-    config: { powerTiming: 'beforeDraw', ...EXTRA },
-    moveDecks: [{ draw: [JOKER, 2], discard: [] }, { draw: [1], discard: [] }],
-    held: [POWERS.HANGED_MAN, null],
-    powerDeck: [POWERS.TOWER, POWERS.HERMIT],
-  }));
-  g = playDraft(g, 0);
-  assert.equal(g.current, 1);
+test('every game starts with no stars', () => {
+  assert.deepEqual(createGame({ seed: 4 }).stars, [0, 0]);
 });

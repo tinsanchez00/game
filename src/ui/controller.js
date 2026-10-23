@@ -7,6 +7,7 @@
 //   pick,        current selection (see below) or null
 //   joker,       null | 'draft' — choice made after drawing a joker
 //   using,       true while picking targets for the held power
+//   upside,      the side being used is upside down (with `using`)
 //   side,        true while choosing upright or upside down for the held power
 //   confirmNew,  showing the "start a new game?" prompt
 //   menuOpen,    the in-game menu is open (3D layout)
@@ -20,7 +21,7 @@ export function initModel(game = R.createGame()) {
 }
 
 function freshUi(viewer, events = []) {
-  return { viewer, pick: null, joker: null, using: false, side: false, confirmNew: false, menuOpen: false, events };
+  return { viewer, pick: null, joker: null, using: false, upside: false, side: false, confirmNew: false, menuOpen: false, events };
 }
 
 /** Where a unit is: a board cell id, or `home:<player>` / `asc:<player>`. */
@@ -37,9 +38,9 @@ export function phaseOf(m) {
   const g = m.game;
   if (g.winner !== null) return 'won';
   if (g.current !== m.ui.viewer) return 'handoff';
-  if (g.lovers?.stage === 'jump') return 'loversJump';
   if (m.ui.side && (R.canUsePower(g) || R.canUsePowerUpsideDown(g))) return 'side';
-  if (m.ui.using && R.canUsePower(g)) return g.held[g.current];
+  // Picking the held power's target: the phase is the power's id.
+  if (m.ui.using && (m.ui.upside ? R.canUsePowerUpsideDown(g) : R.canUsePower(g))) return g.held[g.current];
   if (g.drawn === null) return 'draw';
   if (R.isNumberCard(g.drawn)) return R.currentMoves(g).length > 0 ? 'move' : 'stuck';
   if (R.mustPassJoker(g)) return 'jokerPass';
@@ -100,44 +101,27 @@ function candidatesAt(g, ids, key) {
   return byType;
 }
 
-/** Distinct-by-type candidates among `ids`: { soldier?: id, commander?: id }. */
-function candidatesOf(g, ids) {
-  const byType = {};
-  for (const id of ids) {
-    const u = R.getUnit(g, id);
-    if (!(u.type in byType)) byType[u.type] = id;
-  }
-  return byType;
-}
-
 function uniqueKeys(g, ids) {
   return [...new Set(ids.map((id) => unitKey(g, R.getUnit(g, id))))];
 }
 
-/** Power uses that name a unit (Lovers, Devil); empty when it has no target. */
-function targetedUses(g) {
-  return R.powerUseChoices(g).filter((c) => c.unit);
+/** The held power's choices for the side being used. */
+function sideChoices(g, upside) {
+  return upside ? R.powerUpsideDownChoices(g) : R.powerUseChoices(g);
 }
 
-// --- "line" Lovers jumps ------------------------------------------------------
-
-/** Distinct jumps: one per source cell and unit type, { unit, pos, from, to } (pos: path position; from/to: cell keys). */
-function jumpOptions(g) {
-  const out = [];
-  for (const j of R.loversJumps(g)) {
-    const u = R.getUnit(g, j.unit);
-    const from = unitKey(g, u);
-    const to = unitKey(g, { player: u.player, pos: j.to });
-    if (!out.some((o) => o.from === from && R.getUnit(g, o.unit).type === u.type)) out.push({ unit: j.unit, pos: j.to, from, to });
-  }
-  return out;
+/** Power uses that name a unit or a card; empty when it takes none. */
+function targetedUses(g, upside = false) {
+  return sideChoices(g, upside).filter((c) => c.unit || c.card !== undefined);
 }
 
-/** The jump to make: the picked unit's, or the only one there is. */
-function chosenJump(m) {
-  const jumps = jumpOptions(m.game);
-  if (m.ui.pick?.unit) return jumps.find((j) => j.unit === m.ui.pick.unit) ?? null;
-  return jumps.length === 1 ? jumps[0] : null;
+/** The held power used with `args` on the side being used. */
+function usePowerSide(g, args, upside) {
+  return upside ? R.usePowerUpsideDown(g, args) : R.usePower(g, args);
+}
+
+function usedEvent(g, upside) {
+  return { type: upside ? 'flipped' : 'played', player: g.current, power: g.held[g.current] };
 }
 
 // --- what the screen should offer -------------------------------------------
@@ -145,11 +129,12 @@ function chosenJump(m) {
 /**
  * Everything the view needs to draw highlights and controls:
  * { phase, tappable, selected, dest, targets, victims, options, chosen, canConfirm,
- *   canUsePower, canUpright, canUpsideDown, cost, power, lines }
+ *   canUsePower, canUpright, canUpsideDown, cost, power, upside, cards, lines }
  * canUsePower: the held power can be tapped (upright and/or upside down);
  * canUpright / canUpsideDown: which sides can be used now; cost: the
- * upside-down star cost.
- * lines: [{ from, to, on }] cell keys of the Lovers jumps on offer (on: the chosen one).
+ * upside-down star cost; upside: the side being used is upside down.
+ * cards: the numbers the upside-down Hermit can take from the discard pile.
+ * lines: kept for the views, always empty.
  */
 export function interactions(m) {
   const g = m.game;
@@ -157,7 +142,7 @@ export function interactions(m) {
   const pick = m.ui.pick;
   const out = {
     phase, tappable: [], selected: null, dest: null, targets: [], victims: [],
-    options: [], chosen: null, canConfirm: false, lines: [], push: null,
+    options: [], chosen: null, canConfirm: false, lines: [], push: null, upside: Boolean(m.ui.using && m.ui.upside), cards: [],
     canUpright: R.canUsePower(g),
     canUpsideDown: R.canUsePowerUpsideDown(g),
     canUsePower: false,
@@ -185,12 +170,16 @@ export function interactions(m) {
     }
   }
 
+  const upside = out.upside;
+
+  // The Lovers: pick a unit, then the ally's cell it jumps to (one, or two when tied).
   if (phase === R.POWERS.LOVERS) {
-    const choices = targetedUses(g);
+    const choices = targetedUses(g, upside);
     if (pick?.unit) {
       const mine = choices.filter((c) => c.unit === pick.unit);
-      out.selected = unitKey(g, R.getUnit(g, pick.unit));
-      out.targets = uniqueKeys(g, mine.map((c) => c.target));
+      const u = R.getUnit(g, pick.unit);
+      out.selected = unitKey(g, u);
+      out.targets = mine.map((c) => unitKey(g, { player: u.player, pos: c.to }));
       out.tappable = [...out.targets, ...uniqueKeys(g, choices.map((c) => c.unit))];
     } else {
       out.tappable = uniqueKeys(g, choices.map((c) => c.unit));
@@ -201,35 +190,27 @@ export function interactions(m) {
     }
   }
 
-  if (phase === 'loversJump') {
-    const jumps = jumpOptions(g);
-    const chosen = chosenJump(m);
-    const isChosen = (j) => chosen !== null && j.unit === chosen.unit;
-    out.lines = jumps.map((j) => ({ from: j.from, to: j.to, on: isChosen(j) }));
-    if (chosen) {
-      Object.assign(out, { selected: chosen.from, dest: chosen.to, canConfirm: true });
-    } else if (pick?.candidates) {
-      out.selected = pick.source;
-      out.options = Object.keys(pick.candidates);
-    }
-    out.tappable = [...new Set(jumps.flatMap((j) => (isChosen(j) ? [j.to] : [j.from, j.to])))];
-  }
-
-  if (phase === R.POWERS.DEVIL) {
-    const ids = targetedUses(g).map((c) => c.unit);
+  // The Devil and the upright Tower: pick a unit, see what it does, confirm.
+  if (phase === R.POWERS.DEVIL || phase === R.POWERS.TOWER) {
+    const ids = targetedUses(g, upside).map((c) => c.unit);
     out.tappable = uniqueKeys(g, ids);
     if (pick?.candidates) {
       out.selected = pick.source;
       out.options = Object.keys(pick.candidates);
     }
     if (pick?.unit) {
-      const after = R.usePower(g, { unit: pick.unit });
-      out.selected = unitKey(g, R.getUnit(g, pick.unit));
-      out.victims = changedToHome(g, after);
-      out.chosen = R.getUnit(g, pick.unit).type;
+      const after = usePowerSide(g, { unit: pick.unit }, upside);
+      const u = R.getUnit(g, pick.unit);
+      out.selected = unitKey(g, u);
+      out.victims = changedToHome(g, after, new Set([pick.unit]));
+      if (phase === R.POWERS.TOWER) out.dest = unitKey(after, R.getUnit(after, pick.unit));
+      out.chosen = u.type;
       out.canConfirm = true;
     }
   }
+
+  // The upside-down Hermit: pick a number from the discard pile.
+  if (phase === R.POWERS.HERMIT) out.cards = targetedUses(g, upside).map((c) => c.card);
 
   return out;
 }
@@ -251,7 +232,7 @@ function describe(before, after, actor) {
     events.push({ type: 'drafted', player: actor, power: after.held[actor] });
   }
   // The same player starts a new turn (Hanged Man, or the tower extra-turn rule).
-  const turnStart = (s) => s.drawn === null && !s.hanged && !s.campsite && !s.lovers && !s.hermit && !s.upsideDown;
+  const turnStart = (s) => s.drawn === null && !s.hanged && !s.campsite && !s.hermit;
   if (after.winner === null && after.current === actor && turnStart(after) && !turnStart(before)) {
     events.push({ type: 'extraTurn', player: actor });
   }
@@ -288,8 +269,8 @@ export function update(m, action) {
       return phase === 'draw' ? { game: R.drawCard(g), ui: freshUi(m.ui.viewer) } : m;
 
     case 'continue': {
-      // Only a turn's own card loses the turn; a Hanged Man, campsite or Lovers card just doesn't move.
-      const midCard = g.hanged || g.campsite || g.lovers || g.hermit || g.upsideDown?.stage === 'step';
+      // Only a turn's own card loses the turn; a Hanged Man or campsite card just doesn't move.
+      const midCard = g.hanged || g.campsite || g.hermit;
       const event = { type: midCard ? 'noMove' : 'turnLost', player: g.current };
       if (phase === 'jokerPass') return commit(m, R.passJoker(g), [event]);
       if (phase !== 'stuck') return m;
@@ -303,35 +284,34 @@ export function update(m, action) {
       if (!ix.canUsePower) return m;
       // A power with an upside-down side: pick a side first (shown even when it can't be paid).
       if (ix.hasUpsideDown) return ui({ side: true, pick: null });
-      return useUpright(m);
+      return startUse(m, false);
 
     case 'side-upright':
-      return phase === 'side' && ix.canUpright ? useUpright({ ...m, ui: { ...m.ui, side: false } }) : m;
+      return phase === 'side' && ix.canUpright ? startUse(m, false) : m;
 
-    case 'side-upside': {
-      if (phase !== 'side' || !ix.canUpsideDown) return m;
-      const power = g.held[g.current];
-      return commit(m, R.usePowerUpsideDown(g), [{ type: 'flipped', player: g.current, power }]);
-    }
-
-    case 'stay':
-      return phase === 'loversJump' ? commit(m, R.playLoversJump(g, null)) : m;
+    case 'side-upside':
+      return phase === 'side' && ix.canUpsideDown ? startUse(m, true) : m;
 
     case 'keep':
+      // The upside-down Hermit: the number picked from the discard pile.
+      if (phase === R.POWERS.HERMIT) {
+        const card = ix.cards[action.index];
+        return card === undefined ? m : commit(m, usePowerSide(g, { card }, ix.upside), [usedEvent(g, ix.upside)]);
+      }
       if (phase !== 'draft') return m;
       return commit(m, R.playDraft(g, action.index));
 
     case 'cancel':
       if (phase === 'side') return ui({ side: false, pick: null });
-      if (phase === R.POWERS.LOVERS || phase === R.POWERS.DEVIL) {
-        return m.ui.pick ? ui({ pick: null }) : ui({ using: false, pick: null });
+      if ([R.POWERS.LOVERS, R.POWERS.DEVIL, R.POWERS.TOWER, R.POWERS.HERMIT].includes(phase)) {
+        return m.ui.pick ? ui({ pick: null }) : ui({ using: false, upside: false, pick: null });
       }
       return ui({ pick: null });
 
     case 'option': {
       const sig = action.value;
       if (phase === 'move' && m.ui.pick) return ui({ pick: { ...m.ui.pick, sig } });
-      if ((phase === R.POWERS.LOVERS || phase === R.POWERS.DEVIL || phase === 'loversJump') && m.ui.pick?.candidates?.[sig]) {
+      if ([R.POWERS.LOVERS, R.POWERS.DEVIL, R.POWERS.TOWER].includes(phase) && m.ui.pick?.candidates?.[sig]) {
         return ui({ pick: { unit: m.ui.pick.candidates[sig] } });
       }
       return m;
@@ -343,14 +323,8 @@ export function update(m, action) {
         const opt = moveSources(g).get(m.ui.pick.source).find((o) => o.sig === m.ui.pick.sig);
         return commit(m, R.playDrawnNumber(g, opt.move));
       }
-      if (phase === 'loversJump') {
-        const j = chosenJump(m);
-        return commit(m, R.playLoversJump(g, { unit: j.unit, to: j.pos }), [{ type: 'jumped', player: g.current }]);
-      }
-      if (phase === R.POWERS.DEVIL) {
-        return commit(m, R.usePower(g, { unit: m.ui.pick.unit }), [
-          { type: 'played', player: g.current, power: R.POWERS.DEVIL },
-        ]);
+      if (phase === R.POWERS.DEVIL || phase === R.POWERS.TOWER) {
+        return commit(m, usePowerSide(g, { unit: m.ui.pick.unit }, ix.upside), [usedEvent(g, ix.upside)]);
       }
       return m;
 
@@ -362,12 +336,13 @@ export function update(m, action) {
   }
 }
 
-/** Uses the held power upright: pick its targets, or play it at once. */
-function useUpright(m) {
+/** Uses the held power with one side up: pick its targets, or play it at once. */
+function startUse(m, upside) {
   const g = m.game;
-  const power = g.held[g.current];
-  if (targetedUses(g).length > 0) return { ...m, ui: { ...m.ui, using: true, side: false, pick: null, joker: null } };
-  return commit(m, R.usePower(g, {}), [{ type: 'played', player: g.current, power }]);
+  if (targetedUses(g, upside).length > 0) {
+    return { ...m, ui: { ...m.ui, using: true, upside, side: false, pick: null, joker: null } };
+  }
+  return commit(m, usePowerSide(g, {}, upside), [usedEvent(g, upside)]);
 }
 
 function tap(m, key, phase, ix) {
@@ -382,37 +357,26 @@ function tap(m, key, phase, ix) {
   }
 
   if (phase === R.POWERS.LOVERS) {
-    const choices = targetedUses(g);
+    const choices = targetedUses(g, ix.upside);
     if (m.ui.pick?.unit && ix.targets.includes(key)) {
-      const choice = choices.find(
-        (c) => c.unit === m.ui.pick.unit && unitKey(g, R.getUnit(g, c.target)) === key,
-      );
-      return commit(m, R.usePower(g, choice), [
-        { type: 'played', player: g.current, power: R.POWERS.LOVERS },
-      ]);
+      const u = R.getUnit(g, m.ui.pick.unit);
+      const choice = choices.find((c) => c.unit === u.id && unitKey(g, { player: u.player, pos: c.to }) === key);
+      return commit(m, usePowerSide(g, choice, ix.upside), [usedEvent(g, ix.upside)]);
     }
     return pickCandidate(m, key, choices.map((c) => c.unit));
   }
 
-  if (phase === R.POWERS.DEVIL) {
-    return pickCandidate(m, key, targetedUses(g).map((c) => c.unit));
-  }
-
-  if (phase === 'loversJump') {
-    if (ix.canConfirm && key === ix.dest) return update(m, { type: 'confirm' });
-    const jumps = jumpOptions(g);
-    // A unit's own cell first; else the ally's cell it would jump to.
-    const fromHere = jumps.filter((j) => j.from === key);
-    const ids = (fromHere.length ? fromHere : jumps.filter((j) => j.to === key)).map((j) => j.unit);
-    return ids.length ? pickCandidate(m, key, ids, { byUnit: false }) : setPick(null);
+  if (phase === R.POWERS.DEVIL || phase === R.POWERS.TOWER) {
+    // The Tower: tapping where the unit steps to confirms, as with a move.
+    if (phase === R.POWERS.TOWER && ix.canConfirm && key === ix.dest) return update(m, { type: 'confirm' });
+    return pickCandidate(m, key, targetedUses(g, ix.upside).map((c) => c.unit));
   }
 
   return m;
 }
 
-function pickCandidate(m, key, ids, { byUnit = true } = {}) {
-  // byUnit false: `key` may be the cell the units would reach rather than the one they stand on.
-  const candidates = byUnit ? candidatesAt(m.game, [...new Set(ids)], key) : candidatesOf(m.game, [...new Set(ids)]);
+function pickCandidate(m, key, ids) {
+  const candidates = candidatesAt(m.game, [...new Set(ids)], key);
   const types = Object.keys(candidates);
   let pick = null;
   if (types.length === 1) pick = { unit: candidates[types[0]] };

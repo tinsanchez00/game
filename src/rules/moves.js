@@ -1,24 +1,17 @@
-// Move generation and resolution for number cards, and what follows a
-// resolved card within a turn.
+// Move generation and resolution for number cards, single-unit power moves,
+// and what follows a resolved card within a turn.
 //
 // A move is { unit: <unit id>, escort?: <unit id> }.
 //
 // Turn-continuation fields on the state (see state.js):
-//   hanged     { stage: 'back' | 'forward', unit } while a Hanged Man use is
-//              resolving: 'back' moves backward, then 'forward' draws a card
-//              that moves `unit` (only after a backward move)
+//   hanged     { stage: 'back', unit, enemy } while a Hanged Man use is
+//              resolving: the card moves a unit backward (an opponent's unit
+//              when `enemy`); once one has moved, an extra turn follows
 //   campsite   { unit } when `drawn` was picked from the discard pile by a
 //              campsite landing; it moves `unit` forward
-//   lovers     { stage: 'move' } while the "line" Lovers' card move is
-//              resolving (rules.loversLine); then, after a card move,
-//              { stage: 'jump', unit }: `unit` may jump onto the ally it sees
-//              ahead in its lane (loversJumps)
 //   hermit     { stage: 'move', steps } while the Hermit's card move is
 //              resolving: only moves onto a cell holding an ally, without an
 //              escort; on landing, that ally moves forward by `steps`
-//   upsideDown { stage: 'step', card } while an upside-down use's one-cell step
-//              (drawn = 1) and anything it triggers resolve; then the turn's
-//              card is restored (or drawn, before draw) with { stage: 'card' }
 //   bonusTurn  set when a move earned another turn (rules.towerExtraTurn)
 
 import { HOME, geometry } from './board.js';
@@ -78,28 +71,36 @@ function canLand(state, g, occ, player, target, count) {
 }
 
 /**
- * How the current card moves `player`'s units: backward (Hanged Man, back
- * stage) and/or only one unit (Hanged Man forward stage, campsite card).
+ * How the current card moves units: backward (Hanged Man), only one unit
+ * (campsite card), onto an ally (Hermit), and whose units move (`player`:
+ * the opponent's for the upside-down Hanged Man).
  */
 export function cardMode(state, player = state.current) {
   if (player !== state.current) return { backward: false, only: null };
   const { hanged, campsite, hermit } = state;
   if (campsite) return { backward: false, only: campsite.unit };
   if (hermit?.stage === 'move') return { backward: false, only: null, hermit: true };
-  if (hanged?.stage === 'back') return { backward: true, only: null };
-  if (hanged?.stage === 'forward') return { backward: false, only: hanged.unit };
+  if (hanged?.stage === 'back') {
+    return hanged.enemy
+      ? { backward: true, only: null, alone: true, player: otherPlayer(state.current) }
+      : { backward: true, only: null };
+  }
   return { backward: false, only: null };
 }
 
-/** All valid moves for `player` with a number card worth `steps`. */
+/**
+ * All valid moves for `player` with a number card worth `steps`.
+ * mode: { backward, only (unit id or null), hermit (onto an ally, alone),
+ * alone (no escort) }.
+ */
 export function legalMoves(state, player, steps, occ = occupancy(state), mode = cardMode(state, player)) {
   if (!Number.isInteger(steps) || steps < 1) {
     throw new Error('legalMoves: steps must be a positive integer');
   }
   const g = geometry(state.config);
-  const { backward, only, hermit = false } = mode;
+  const { backward, only, hermit = false, alone = false } = mode;
   const locked = isCommanderLocked(state, player);
-  const escort = state.config.rules.escort && !hermit; // the Hermit moves alone
+  const escort = state.config.rules.escort && !hermit && !alone; // the Hermit moves alone
   const moves = [];
   for (const unit of state.units) {
     if (unit.player !== player) continue;
@@ -124,6 +125,16 @@ export function legalMoves(state, player, steps, occ = occupancy(state), mode = 
   return moves;
 }
 
+/**
+ * The moves the current card offers: the current player's, or the
+ * opponent's units moving back for the upside-down Hanged Man.
+ */
+export function turnMoves(state, steps = state.drawn) {
+  const mode = cardMode(state);
+  const player = mode.player ?? state.current;
+  return legalMoves(state, player, steps, occupancy(state), mode);
+}
+
 function sameMove(a, b) {
   return a.unit === b.unit && (a.escort ?? null) === (b.escort ?? null);
 }
@@ -131,6 +142,17 @@ function sameMove(a, b) {
 /** Returns `units` with every unit matching `predicate` moved to HOME. */
 export function sendHome(units, predicate) {
   return units.map((u) => (predicate(u) ? { ...u, pos: HOME } : u));
+}
+
+/** Sets state.winner when a team has ascended every unit (null: no change). */
+function decideWinner(state, order = [state.current, otherPlayer(state.current)]) {
+  const g = geometry(state.config);
+  for (const p of order) {
+    if (state.units.every((u) => u.player !== p || u.pos === g.ascended)) {
+      return { ...state, drawn: null, hanged: null, campsite: null, hermit: null, bonusTurn: false, winner: p };
+    }
+  }
+  return null;
 }
 
 /**
@@ -144,9 +166,7 @@ export function endTurn(state, extraTurn = false) {
     drawn: null,
     hanged: null,
     campsite: null,
-    lovers: null,
     hermit: null,
-    upsideDown: null,
     bonusTurn: false,
     current: keep ? state.current : otherPlayer(state.current),
   };
@@ -166,38 +186,21 @@ function pickFromDiscard(state) {
 /**
  * Called once the drawn card has been resolved (a move, a pass or a draft).
  * `landing` is { unit, pos } after a card move, else null. Starts a campsite
- * card, moves a Hanged Man use to its forward stage, or ends the turn.
+ * card, gives the Hanged Man's extra turn, or ends the turn.
  */
 export function continueTurn(state, landing = null) {
   // The Hermit: the ally the unit landed on is pushed (instead of a campsite card).
   if (state.hermit?.stage === 'move' && landing) return pushAlly(state, landing);
   const g = geometry(state.config);
   const done = { ...state, drawn: null, campsite: null };
-  if (landing && g.isCampsite(landing.pos)) {
+  // An opponent's unit moved back by the Hanged Man doesn't use the campsite.
+  if (landing && g.isCampsite(landing.pos) && !done.hanged?.enemy) {
     const pick = pickFromDiscard(done);
     if (pick) return { ...done, rng: pick.rng, drawn: pick.card, campsite: { unit: landing.unit } };
   }
-  // A free power's bonus needs a unit that moved with the card.
-  if (done.hanged?.stage === 'back' && done.hanged.unit !== null) {
-    // rules.hangedTurn: an extra turn instead of the forward card.
-    if (done.config.rules.hangedTurn) return endTurn({ ...done, hanged: null }, true);
-    return { ...done, hanged: { stage: 'forward', unit: done.hanged.unit } };
-  }
-  const mover = landing?.unit ?? state.campsite?.unit ?? null;
-  if (done.lovers?.stage === 'move' && mover !== null) return startLoversJump(done, mover);
-  if (done.upsideDown?.stage === 'step') return resumeTurnCard(done);
+  // The Hanged Man's extra turn needs a unit that moved with the card.
+  if (done.hanged?.stage === 'back' && done.hanged.unit !== null) return endTurn({ ...done, hanged: null }, true);
   return endTurn(done);
-}
-
-/**
- * After an upside-down use's step: the turn's card is played as usual (with
- * the before-draw timing, it is drawn now).
- */
-export function resumeTurnCard(state) {
-  const { card } = state.upsideDown;
-  const next = { ...state, drawn: card, campsite: null, upsideDown: { stage: 'card' } };
-  if (card !== null) return next;
-  return drawTurnCard(next);
 }
 
 /** Draws the current player's next move card into `drawn` (reshuffling an empty deck). */
@@ -233,77 +236,51 @@ function pushAlly(state, landing) {
   return valid ? applyLegalMove(base, { unit: ally.id }, steps) : endTurn(base);
 }
 
-// --- the "line" Lovers jump ---------------------------------------------------
+// --- single-unit power moves -----------------------------------------------------------
 
-/** Last path position of the lane holding `pos` (start, middle or end lane), or null. */
-function laneEnd(g, pos) {
-  if (!g.isOnBoard(pos)) return null;
-  if (pos < g.middleFirst) return g.middleFirst - 1;
-  if (pos <= g.middleLast) return g.middleLast;
-  return g.pathLength;
+/**
+ * Where unit `unitId` would land stepping one cell forward on its own path
+ * (normal move rules, alone), or null when it can't.
+ */
+export function stepTarget(state, unitId, occ = occupancy(state)) {
+  const unit = getUnit(state, unitId);
+  const ok = legalMoves(state, unit.player, 1, occ, { backward: false, only: unitId, alone: true })
+    .some((m) => m.unit === unitId);
+  return ok ? unit.pos + 1 : null;
 }
 
 /**
- * Where unit `unitId` can jump: the first occupied cell ahead of it in its
- * lane, if that cell holds only the owner's units and has room. Else null.
+ * Moves `unitId` one cell forward on its own path (The Tower): it captures
+ * the other team's units there; it may ascend, and may decide the game.
+ * The turn itself is untouched. Assumes stepTarget(state, unitId) !== null.
  */
-export function loversJumpTarget(state, unitId, occ = occupancy(state)) {
+export function stepUnit(state, unitId) {
   const g = geometry(state.config);
   const unit = getUnit(state, unitId);
-  const end = laneEnd(g, unit.pos);
-  if (end === null) return null;
-  const me = unit.player;
-  for (let q = unit.pos + 1; q <= end; q += 1) {
-    const c = g.cellIndex(me, q);
-    const mine = occ[me][c];
-    const theirs = occ[otherPlayer(me)][c];
-    if (mine + theirs === 0) continue;
-    return theirs === 0 && mine < state.config.maxPerCell ? q : null;
-  }
-  return null;
+  const target = unit.pos + 1;
+  const cell = g.cellIndex(unit.player, target);
+  const enemy = otherPlayer(unit.player);
+  const units = state.units.map((u) => {
+    if (u.id === unitId) return { ...u, pos: target };
+    if (cell >= 0 && u.player === enemy && g.cellIndex(enemy, u.pos) === cell) return { ...u, pos: HOME };
+    return u;
+  });
+  const next = countDeaths(state, { ...state, units }, [unitId]);
+  return decideWinner(next, [unit.player, enemy]) ?? next;
 }
 
-/** Jumps available now: [{ unit, to }] (to: path position). */
-export function loversJumps(state) {
-  if (state.lovers?.stage !== 'jump') return [];
-  const occ = occupancy(state);
-  const out = [];
-  for (const u of state.units) {
-    if (u.player !== state.current) continue;
-    if (state.lovers.unit !== null && u.id !== state.lovers.unit) continue;
-    const to = loversJumpTarget(state, u.id, occ);
-    if (to !== null) out.push({ unit: u.id, to });
-  }
-  return out;
-}
-
-/** Enters the jump stage for `unit` (null: any unit); ends the turn when no jump exists. */
-export function startLoversJump(state, unit) {
-  const next = { ...state, drawn: null, lovers: { stage: 'jump', unit } };
-  return loversJumps(next).length > 0 ? next : endTurn(next);
-}
-
-/** Makes one of loversJumps(state), or skips it (null); the turn then ends. */
-export function playLoversJump(state, jump = null) {
-  if (state.winner !== null) throw new Error('playLoversJump: the game is over');
-  if (state.lovers?.stage !== 'jump') throw new Error('playLoversJump: no Lovers jump is pending');
-  if (jump === null) return endTurn(state);
-  if (!loversJumps(state).some((j) => j.unit === jump.unit && j.to === jump.to)) {
-    throw new Error('playLoversJump: invalid jump');
-  }
-  const units = state.units.map((u) => (u.id === jump.unit ? { ...u, pos: jump.to } : u));
-  return endTurn({ ...state, units });
-}
+// --- moves --------------------------------------------------------------------------
 
 /**
- * Applies a move known to be in legalMoves(state, state.current, steps),
- * without checking it again. Use applyMove for untrusted input.
+ * Applies a move known to be one of turnMoves(state, steps), without checking
+ * it again. Use applyMove for untrusted input.
  */
 export function applyLegalMove(state, move, steps) {
   const g = geometry(state.config);
-  const player = state.current;
-  const { backward } = cardMode(state, player);
+  const mode = cardMode(state);
+  const { backward } = mode;
   const mover = getUnit(state, move.unit);
+  const player = mover.player; // the opponent's, for the upside-down Hanged Man
   const target = destination(state, g, mover, steps, backward);
   const targetCell = g.cellIndex(player, target);
   const enemy = otherPlayer(player);
@@ -318,32 +295,23 @@ export function applyLegalMove(state, move, steps) {
   // Captured units give their owner stars (a mover sent home backward isn't a death).
   const { stars } = countDeaths(state, { ...state, units }, [move.unit, move.escort].filter(Boolean));
 
-  let won = true;
-  for (const u of units) {
-    if (u.player === player && u.pos !== g.ascended) {
-      won = false;
-      break;
-    }
-  }
-  if (won) {
-    return { ...state, units, stars, drawn: null, hanged: null, campsite: null, lovers: null, hermit: null, upsideDown: null, bonusTurn: false, winner: player };
-  }
+  const won = decideWinner({ ...state, units, stars }, [player]);
+  if (won) return won;
 
   const towerTurn = state.config.rules.towerExtraTurn && !backward && g.isTower(target);
   const next = { ...state, units, stars, bonusTurn: Boolean(state.bonusTurn) || towerTurn };
-  if (backward) next.hanged = { stage: 'back', unit: move.unit };
+  if (backward) next.hanged = { ...state.hanged, stage: 'back', unit: move.unit };
   return continueTurn(next, { unit: move.unit, pos: target });
 }
 
 /**
- * Applies a move that must be one of legalMoves(state, state.current, steps).
- * Returns the new state: the turn continues (campsite card, Hanged Man
- * forward stage) or passes to the other player, unless the game is won or an
- * extra turn applies.
+ * Applies a move that must be one of turnMoves(state, steps).
+ * Returns the new state: the turn continues (campsite card, Hermit push) or
+ * passes to the other player, unless the game is won or an extra turn applies.
  */
 export function applyMove(state, move, steps) {
   if (state.winner !== null) throw new Error('applyMove: the game is over');
-  const legal = legalMoves(state, state.current, steps);
+  const legal = turnMoves(state, steps);
   if (!legal.some((m) => sameMove(m, move))) {
     throw new Error('applyMove: illegal move');
   }
@@ -357,10 +325,10 @@ export function applyMove(state, move, steps) {
  */
 export function playNumberCard(state, steps, move = null) {
   if (state.winner !== null) throw new Error('playNumberCard: the game is over');
-  const legal = legalMoves(state, state.current, steps);
+  const legal = turnMoves(state, steps);
   if (legal.length === 0) {
     if (move !== null) throw new Error('playNumberCard: no legal move exists');
-    // A Hanged Man card with no backward move ends the turn (no forward card).
+    // A Hanged Man card with no backward move ends the turn (no extra turn).
     return cardMode(state).backward ? endTurn(state) : continueTurn(state);
   }
   if (move === null) throw new Error('playNumberCard: a legal move must be made');

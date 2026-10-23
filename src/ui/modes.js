@@ -1,7 +1,7 @@
 // Game modes for the "Game mode" screen: named presets of a small settings
 // object, and its translation into a rules config. Pure: no DOM.
 //
-// settings = { units, powers, deck, timing, lovers, hanged, jokers,
+// settings = { units, powers, deck, timing, jokers,
 //              commanderLock, escort, towersProtect, towerExtraTurn, exactAscend }
 // deck: the powers in the power deck (ids, in POWER_IDS order).
 
@@ -16,8 +16,6 @@ export const STANDARD = Object.freeze({
   powers: D.powers,
   deck: Object.freeze(POWER_IDS.filter((id) => D.powerDeck.includes(id))),
   timing: D.powerTiming,
-  lovers: D.rules.loversLine ? 'jump' : 'pairing',
-  hanged: D.rules.hangedTurn ? 'extra' : 'forward',
   jokers: D.moveDeck.length - NUMBERS.length,
   commanderLock: D.rules.commanderLock,
   escort: D.rules.escort,
@@ -31,7 +29,6 @@ export const PRESETS = Object.freeze([
   { id: 'standard', changes: {} },
   { id: 'short', changes: { units: 5 } },
   { id: 'noPowers', changes: { powers: false } },
-  { id: 'earlierPowers', changes: { lovers: 'pairing', hanged: 'forward' } },
   { id: 'twoJokers', changes: { jokers: 2 } },
   { id: 'urTowers', changes: { towerExtraTurn: true } },
 ]);
@@ -46,8 +43,6 @@ export const FIELDS = Object.freeze([
   { key: 'powers', kind: 'switch' },
   { key: 'deck', kind: 'multi', values: [...POWER_IDS], when: (s) => s.powers },
   { key: 'timing', kind: 'choice', values: ['afterDraw', 'beforeDraw'] },
-  { key: 'lovers', kind: 'choice', values: ['jump', 'pairing'] },
-  { key: 'hanged', kind: 'choice', values: ['extra', 'forward'] },
   { key: 'jokers', kind: 'choice', values: [1, 2] },
   { key: 'commanderLock', kind: 'switch' },
   { key: 'escort', kind: 'switch' },
@@ -107,8 +102,6 @@ export function toConfig(s) {
       towersProtect: s.towersProtect,
       towerExtraTurn: s.towerExtraTurn,
       exactAscend: s.exactAscend,
-      loversLine: s.lovers === 'jump',
-      hangedTurn: s.hanged === 'extra',
     },
   };
 }

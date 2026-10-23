@@ -16,9 +16,6 @@ test('every preset builds a valid config; each changes what it says', () => {
   for (const p of PRESETS) assert.ok(R.makeConfig(toConfig(presetSettings(p.id))));
   assert.equal(R.makeConfig(toConfig(presetSettings('short'))).soldiers, 4);
   assert.equal(R.makeConfig(toConfig(presetSettings('noPowers'))).powers, false);
-  const early = R.makeConfig(toConfig(presetSettings('earlierPowers'))).rules;
-  assert.equal(early.loversLine, false);
-  assert.equal(early.hangedTurn, false);
   assert.equal(R.makeConfig(toConfig(presetSettings('twoJokers'))).moveDeck.filter((c) => c === R.JOKER).length, 2);
   assert.equal(R.makeConfig(toConfig(presetSettings('urTowers'))).rules.towerExtraTurn, true);
 });
@@ -58,17 +55,17 @@ test('game mode: pick a preset, customize it, start with those settings', () => 
   s = act(s, 'menu-preset', { value: 'short' });
   s = act(s, 'menu-customize');
   assert.match(viewShell(s), /class="field"/);
-  s = act(s, 'menu-set', { key: 'lovers', value: 'pairing' });
+  s = act(s, 'menu-set', { key: 'jokers', value: '2' });
   s = act(s, 'menu-set', { key: 'escort', value: 'false' });
-  assert.deepEqual(changedKeys('short', s.menu.settings), ['lovers', 'escort']);
+  assert.deepEqual(changedKeys('short', s.menu.settings), ['jokers', 'escort']);
   const html = viewShell(s);
   assert.match(html, /Short game · changed/);
-  assert.match(html, /the Lovers: Pairing/);
+  assert.match(html, /2 Jokers/);
   s = act(s, 'menu-start');
   assert.equal(s.screen, 'game');
   const c = s.play.game.config;
   assert.equal(c.soldiers, 4);
-  assert.equal(c.rules.loversLine, false);
+  assert.equal(c.moveDeck.filter((x) => x === R.JOKER).length, 2);
   assert.equal(c.rules.escort, false);
 });
 
@@ -121,7 +118,7 @@ test('3D game screen: the draft is picked on the table, not with buttons', () =>
 
 test('3D game screen: no "Use … instead" buttons; the power card is tapped instead', () => {
   const game = R.createGame({ seed: 7 });
-  let s = updateShell(initShell(), { type: 'menu-quick' }, { newGame: () => ({ ...game, drawn: 2, held: [R.POWERS.TOWER, R.POWERS.TOWER] }) });
+  let s = updateShell(initShell(), { type: 'menu-quick' }, { newGame: () => ({ ...game, drawn: 2, held: [R.POWERS.DEVIL, R.POWERS.DEVIL] }) });
   s = { ...s, play: { ...s.play, ui: { ...s.play.ui, viewer: s.play.game.current } } };
   assert.doesNotMatch(viewShell(s), /data-action="use-power"/);
   assert.match(viewShell({ ...s, board: 'flat' }), /data-action="use-power"/);
