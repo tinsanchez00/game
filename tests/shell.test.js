@@ -32,7 +32,22 @@ test('the app opens on the start screen; Quick game starts the standard rules', 
   s = act(s, 'menu-quick');
   assert.equal(s.screen, 'game');
   assert.deepEqual(s.play.game.config, R.DEFAULT_CONFIG);
+  assert.match(viewShell(s), /data-board3d/, 'the 3D board by default');
+  assert.doesNotMatch(viewShell(s), /class="board"/);
+});
+
+test('the start screen switches between the 3D and the flat board', () => {
+  let s = initShell();
+  assert.equal(s.board, '3d');
+  assert.match(viewShell(s), /data-action="menu-board"/);
+  s = act(s, 'menu-board');
+  assert.equal(s.board, 'flat');
+  s = act(s, 'menu-quick');
   assert.match(viewShell(s), /class="board"/);
+  assert.doesNotMatch(viewShell(s), /data-board3d/);
+  assert.equal(act(s, 'menu-board').board, 'flat', 'only from the start screen');
+  assert.equal(initShell(null, 'flat').board, 'flat');
+  assert.equal(initShell(null, 'nonsense').board, '3d');
 });
 
 test('game mode: pick a preset, customize it, start with those settings', () => {

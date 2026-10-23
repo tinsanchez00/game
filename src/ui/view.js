@@ -71,6 +71,16 @@ function jumpLines(slots, columns, ix) {
   }).join('');
 }
 
+/** The 3D board: an empty host the app fills with its canvas (board3d/). */
+function board3dHost(g, viewer) {
+  const other = R.otherPlayer(viewer);
+  return `<section class="board-area three" aria-label="Board">
+    <span class="lane">${esc(TEXT.lane(team(other)))}</span>
+    <div class="board3d-host" data-board3d></div>
+    <span class="lane">${esc(TEXT.lane(team(viewer)))}</span>
+  </section>`;
+}
+
 function board(g, viewer, ix, victims, victimKeys) {
   const other = R.otherPlayer(viewer);
   const slots = boardSlots(viewer, g.config);
@@ -317,7 +327,8 @@ function winOverlay(g) {
   </div>`;
 }
 
-export function view(m) {
+/** `board`: 'flat' (HTML grid) or '3d' (a host for the canvas). */
+export function view(m, { board: style = 'flat' } = {}) {
   const g = m.game;
   const ix = interactions(m);
   const victims = new Set(ix.victims);
@@ -325,7 +336,7 @@ export function view(m) {
   return `<div class="app">
     ${topBar(m)}
     ${opponentPanel(g, R.otherPlayer(m.ui.viewer))}
-    ${board(g, m.ui.viewer, ix, victims, victimKeys)}
+    ${style === '3d' ? board3dHost(g, m.ui.viewer) : board(g, m.ui.viewer, ix, victims, victimKeys)}
     ${playerPanel(m, ix, victims, victimKeys)}
     ${ix.phase === 'won' ? winOverlay(g) : ''}
   </div>`;

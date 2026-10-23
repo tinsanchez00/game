@@ -5,6 +5,7 @@
 //   screen,  'start' | 'mode' | 'game'
 //   play,    the game model ({ game, ui }) or null
 //   menu,    { preset, settings, open } for the game-mode screen
+//   board,   '3d' | 'flat' — how the game board is drawn
 // }
 
 import { createGame } from '../rules/index.js';
@@ -20,9 +21,11 @@ function freshMenu() {
   return { preset: 'standard', settings: presetSettings('standard'), open: false };
 }
 
+export const BOARD_STYLES = Object.freeze(['3d', 'flat']);
+
 /** A shell on the start screen; `play` is a saved game to continue, if any. */
-export function initShell(play = null) {
-  return { screen: 'start', play, menu: freshMenu() };
+export function initShell(play = null, board = '3d') {
+  return { screen: 'start', play, menu: freshMenu(), board: BOARD_STYLES.includes(board) ? board : '3d' };
 }
 
 /**
@@ -40,6 +43,8 @@ export function updateShell(s, action, { newGame = (config) => createGame({ conf
       return s.play ? { ...s, screen: 'game' } : s;
     case 'menu-back':
       return { ...s, screen: 'start' };
+    case 'menu-board':
+      return s.screen === 'start' ? { ...s, board: s.board === 'flat' ? '3d' : 'flat' } : s;
     case 'menu-preset':
       return menu({ preset: action.value, settings: presetSettings(action.value) });
     case 'menu-customize':
@@ -78,7 +83,10 @@ function startView(s) {
       ${btn('menu-mode', MENU.mode)}
       ${cont}
     </div>
-    <p class="hint">${esc(MENU.quickHint)}</p>
+    <div class="start-foot">
+      <p class="hint">${esc(MENU.quickHint)}</p>
+      <button type="button" class="link quiet" data-action="menu-board">${esc(MENU.boardSwitch(s.board))}</button>
+    </div>
   </div>`;
 }
 
@@ -138,7 +146,7 @@ function chevronLeft() {
 }
 
 export function viewShell(s) {
-  if (s.screen === 'game' && s.play) return gameView(s.play);
+  if (s.screen === 'game' && s.play) return gameView(s.play, { board: s.board ?? '3d' });
   if (s.screen === 'mode') return modeView(s);
   return startView(s);
 }

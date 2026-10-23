@@ -105,6 +105,8 @@ export const MENU = {
   mode: 'Game mode',
   continue: 'Continue last game',
   quickHint: 'Quick game: standard rules, 6 units each',
+  // Placeholder wording: the board style switch at the bottom of the start screen.
+  boardSwitch: (board) => (board === 'flat' ? 'Flat board · switch to 3D' : '3D board · switch to flat'),
   back: 'Back',
   start: 'Start',
   customize: 'Customize',
