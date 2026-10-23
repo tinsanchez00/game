@@ -321,3 +321,18 @@ test('the selected piece looks different from its target: a turning ring, no fil
   board.sync(model, interactions(model), { animate: true, now: 10 });
   assert.ok(!board.parts.selRing.visible);
 });
+
+test('the target stands apart from the other selectable pieces: a light column, its own colour, the others quieter', () => {
+  let model = initModel(gameWith({ 'p0-s1': 6, 'p0-s2': 2 }, { drawn: 2 }));
+  const board = sceneFor(model);
+  board.tick(350);
+  const other = board.parts.surfaces.get(G.cellId(0, 2));
+  const loud = other.halo.material.opacity;
+  model = step(board, model, { type: 'tap', key: G.cellId(0, 6) }, 1000);
+  board.tick(1350);
+  const dest = board.parts.surfaces.get(G.cellId(0, 8));
+  assert.ok(board.parts.beam.visible);
+  assert.ok(Math.abs(board.parts.beam.position.x - board.layout.byKey.get(G.cellId(0, 8)).x) < 1e-6);
+  assert.notEqual(dest.halo.material.color.getHex(), other.halo.material.color.getHex(), 'target colour differs from selectable');
+  assert.ok(other.halo.material.opacity < loud * 0.6, 'other selectable cells pulse more quietly');
+});

@@ -38,8 +38,8 @@ const C = {
   glow: 0x8fe3a4, // what you can act on: soft green (placeholder colour)
   glowSel: 0xfff1d0, // the selected piece: warm white, unlike any target colour
   // The destination shows the consequence of the move (placeholder colours).
-  destMove: 0x5fd67c,
-  destTower: 0x8fbfff, // safe on a tower
+  destMove: 0x5ee6ff, // cyan: unlike the green of what you can select
+  destTower: 0x7a86ff, // indigo: safe on a tower
   destCamp: 0xf2b45a, // campsite: the unit moves again
   destAscend: 0xf6d77a, // ascends
   hanged: 0xa98cff,
@@ -576,6 +576,7 @@ export function createBoardScene(config) {
   let pulseKeys = new Set();
   let doomed = new Set();
   let glowUnits = new Set(); // pieces you can act on
+  let selecting = false; // a piece is selected: the other selectable ones pulse more quietly
   // Selection marker: a dashed ring turning around the selected piece's base.
   const selRing = new THREE.Group();
   for (let i = 0; i < 10; i += 1) {
@@ -587,6 +588,17 @@ export function createBoardScene(config) {
   }
   selRing.visible = false;
   scene.add(selRing);
+  // Target marker: a soft column of light rising from the target, in its consequence colour.
+  const fade = TX.columnFade();
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.42, 0.46, 1.3, 32, 1, true).translate(0, 0.65, 0),
+    new THREE.MeshBasicMaterial({
+      color: C.destMove, map: fade, transparent: true, opacity: fade ? 0.9 : 0.25, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false,
+    }),
+  );
+  beam.visible = false;
+  scene.add(beam);
   const ghosts = new Map(); // 'type:player' -> translucent piece showing where a move lands
   let ghost = null; // { obj, color }
   const effects = []; // { update(t) -> void, dur, start, done() }
@@ -813,6 +825,15 @@ export function createBoardScene(config) {
     }
     doomed = victimIds;
     syncGhost(lastGameFor(), ix, victimKeys);
+    const target = ix.dest ? posOf(ix.dest) : null;
+    beam.visible = Boolean(target);
+    if (target) {
+      const onCell = layout.byKey.has(ix.dest);
+      beam.position.set(target.x, onCell ? TILE_TOP : TABLE_Y + 0.06, target.z);
+      beam.scale.set(onCell ? 1 : (target.w ?? 1) / 0.9, 1, onCell ? 1 : (target.d ?? 1) / 0.9);
+      beam.material.color.setHex(destColor(ix.dest, victimKeys));
+    }
+    selecting = Boolean(ix.selected);
     const selAt = ix.selected ? posOf(ix.selected) : null;
     selRing.visible = Boolean(selAt);
     if (selAt) {
@@ -1269,11 +1290,13 @@ export function createBoardScene(config) {
     }
     // Things you can act on breathe with a glow.
     const pulse = 0.5 + 0.5 * Math.sin((now / 1400) * Math.PI * 2);
+    const quiet = selecting ? 0.4 : 1;
     for (const key of pulseKeys) {
       const c = surfaces.get(key);
       if (!c) continue;
-      c.tileMat.emissiveIntensity = 0.05 + 0.2 * pulse;
-      c.halo.material.opacity = 0.35 + 0.55 * pulse;
+      c.tileMat.emissiveIntensity = (0.05 + 0.2 * pulse) * quiet;
+      c.halo.material.opacity = (0.35 + 0.55 * pulse) * quiet;
+      c.frame.material.opacity = 0.9 * (selecting ? 0.5 : 1);
     }
     if (glow.deck) {
       glow.deck.deckHalo.material.opacity = 0.4 + 0.6 * pulse;
@@ -1285,7 +1308,7 @@ export function createBoardScene(config) {
     }
     for (const id of glowUnits) {
       const p = pieces.get(id);
-      if (p && !p.anim) setGlow(p.obj.userData.mats, C.glow, 0.15 + 0.35 * pulse);
+      if (p && !p.anim) setGlow(p.obj.userData.mats, C.glow, (0.15 + 0.35 * pulse) * quiet);
     }
     for (const id of doomed) {
       const p = pieces.get(id);
@@ -1378,6 +1401,7 @@ export function createBoardScene(config) {
       sides, draftCards, surfaces, effects,
       get ghost() { return ghost?.obj ?? null; },
       selRing,
+      beam,
     },
     get azimuth() { return cam.azimuth; },
     get spinning() { return cam.spin !== null; },
