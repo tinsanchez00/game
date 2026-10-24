@@ -3,7 +3,7 @@
 // on first use; without WebGL the flat board is shown instead.
 
 import { interactions } from './controller.js';
-import { TEXT } from './labels.js';
+import { TEXT, languageFor } from './labels.js';
 import { initShell, updateShell, viewShell } from './shell.js';
 
 const STORE_KEY = 'board-game-test-v6';
@@ -36,12 +36,15 @@ function loadBoardStyle() {
   }
 }
 
+// A saved choice wins; otherwise the device's language (Spanish or English).
 function loadLanguage() {
   try {
-    return localStorage.getItem(LANG_KEY) ?? undefined;
+    const saved = localStorage.getItem(LANG_KEY);
+    if (saved) return saved;
   } catch {
-    return undefined;
+    // Storage unavailable: fall back to the device language.
   }
+  return languageFor([...(navigator.languages ?? []), navigator.language]);
 }
 
 export function startApp(root) {

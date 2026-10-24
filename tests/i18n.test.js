@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EN } from '../src/ui/labels.en.js';
 import { ES } from '../src/ui/labels.es.js';
-import { MENU, TEXT, setLanguage } from '../src/ui/labels.js';
+import { MENU, TEXT, languageFor, setLanguage } from '../src/ui/labels.js';
 import { initShell, updateShell, viewShell } from '../src/ui/shell.js';
 
 // The keys of a wording set, with the kind of each value: both languages must match.
@@ -46,6 +46,15 @@ test('the Menu language choice is kept in the shell and shown on the start scree
   } finally {
     setLanguage('en');
   }
+});
+
+test('without a saved choice, the device language decides (Spanish or English)', () => {
+  assert.equal(languageFor(['es-ES', 'en-US']), 'es');
+  assert.equal(languageFor(['fr-FR', 'es']), 'es');
+  assert.equal(languageFor(['EN-gb']), 'en');
+  assert.equal(languageFor(['de-DE']), 'en', 'unsupported languages fall back to English');
+  assert.equal(languageFor([]), 'en');
+  assert.equal(languageFor([undefined]), 'en');
 });
 
 test('the mode screen summary is translated', () => {

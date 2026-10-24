@@ -21,3 +21,12 @@ export function setLanguage(lang) {
   language = LANGUAGES.includes(lang) ? lang : 'en';
   ({ TEAM_NAMES, POWER_INFO, OPTION_LABELS, TEXT, MENU } = SETS[language]);
 }
+
+/** The first language in `tags` (BCP 47, e.g. 'es-ES') that the app has; English if none. */
+export function languageFor(tags = []) {
+  for (const tag of tags) {
+    const code = String(tag ?? '').toLowerCase().split('-')[0];
+    if (LANGUAGES.includes(code)) return code;
+  }
+  return 'en';
+}
