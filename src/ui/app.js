@@ -8,6 +8,7 @@ import { initShell, updateShell, viewShell } from './shell.js';
 
 const STORE_KEY = 'board-game-test-v6';
 const BOARD_KEY = 'board-game-board-style-v1';
+const LANG_KEY = 'board-game-language-v1';
 
 function load() {
   try {
@@ -35,9 +36,17 @@ function loadBoardStyle() {
   }
 }
 
+function loadLanguage() {
+  try {
+    return localStorage.getItem(LANG_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function startApp(root) {
   // Opens on the start screen; a saved game can be continued from there.
-  let shell = initShell(load(), loadBoardStyle());
+  let shell = initShell(load(), loadBoardStyle(), loadLanguage());
 
   // 3D board: null until loaded; `failed` when WebGL or the module is unavailable.
   const three = { view: null, loading: null, failed: false };
@@ -76,6 +85,9 @@ export function startApp(root) {
 
   function render({ animate = false } = {}) {
     root.innerHTML = viewShell({ ...shell, board: boardStyle() });
+    // viewShell has set the wording for this render, so the page title follows it.
+    document.documentElement.lang = shell.lang;
+    document.title = TEXT.pageTitle;
     addFullscreenButton();
     const host = root.querySelector('[data-board3d]');
     if (!host || !shell.play) return;
@@ -118,6 +130,7 @@ export function startApp(root) {
     }
     if (shell.play) save(STORE_KEY, shell.play);
     if (shell.board !== before.board) save(BOARD_KEY, shell.board);
+    if (shell.lang !== before.lang) save(LANG_KEY, shell.lang);
     // Animate only moves within the same game on the game screen.
     const sameGame = before.screen === 'game' && shell.screen === 'game' && action.type !== 'new-confirm';
     render({ animate: sameGame });

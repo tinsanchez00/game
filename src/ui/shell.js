@@ -6,11 +6,12 @@
 //   play,    the game model ({ game, ui }) or null
 //   menu,    { preset, settings, open } for the game-mode screen
 //   board,   '3d' (pass the phone) | 'table' (phone on the table) | 'flat'
+//   lang,    'en' | 'es' (the wording on screen)
 // }
 
 import { createGame } from '../rules/index.js';
 import { initModel, update as updateGame } from './controller.js';
-import { MENU, TEXT } from './labels.js';
+import { LANGUAGES, MENU, TEXT, setLanguage } from './labels.js';
 import { FIELDS, PRESETS, changedKeys, parseValue, presetSettings, toConfig, toggleValue } from './modes.js';
 import { view as gameView } from './view.js';
 
@@ -24,8 +25,14 @@ function freshMenu() {
 export const BOARD_STYLES = Object.freeze(['3d', 'table', 'flat']);
 
 /** A shell on the start screen; `play` is a saved game to continue, if any. */
-export function initShell(play = null, board = '3d') {
-  return { screen: 'start', play, menu: freshMenu(), board: BOARD_STYLES.includes(board) ? board : '3d' };
+export function initShell(play = null, board = '3d', lang = 'en') {
+  return {
+    screen: 'start',
+    play,
+    menu: freshMenu(),
+    board: BOARD_STYLES.includes(board) ? board : '3d',
+    lang: LANGUAGES.includes(lang) ? lang : 'en',
+  };
 }
 
 /**
@@ -48,6 +55,10 @@ export function updateShell(s, action, { newGame = (config) => createGame({ conf
       if (s.screen !== 'start') return s;
       if (BOARD_STYLES.includes(action.value)) return { ...s, board: action.value };
       return { ...s, board: s.board === 'flat' ? '3d' : 'flat' };
+    case 'menu-lang':
+      // Unknown codes are ignored; the choice is saved by the app wiring.
+      if (!LANGUAGES.includes(action.value)) return s;
+      return { ...s, lang: action.value };
     case 'menu-preset':
       return menu({ preset: action.value, settings: presetSettings(action.value) });
     case 'menu-customize':
@@ -87,7 +98,7 @@ function startView(s) {
     ? `<button type="button" class="link" data-action="menu-continue">${esc(MENU.continue)}</button>`
     : '';
   return `<div class="app menu start">
-    <header class="topbar"><span class="mode">${esc(TEXT.testMode)}</span></header>
+    <header class="topbar"><span class="mode">${esc(TEXT.testMode)}</span>${languageChoice(s.lang)}</header>
     <div class="title-block">
       ${crestIcon()}
       <h1 class="game-title">${esc(MENU.gameName)}</h1>
@@ -113,6 +124,15 @@ function seatChoice(board) {
     return `<button type="button" class="seg-opt${on ? ' on' : ''}" aria-pressed="${on}" data-action="menu-board" data-value="${v}">${esc(MENU.seat[v])}</button>`;
   });
   return `<div class="seg seat" role="group" aria-label="${esc(MENU.seatLabel)}">${opts.join('')}</div>`;
+}
+
+/** English / Español switch. Each name is written in its own language. */
+function languageChoice(lang) {
+  const opts = LANGUAGES.map((code) => {
+    const on = code === lang;
+    return `<button type="button" class="seg-opt${on ? ' on' : ''}" aria-pressed="${on}" data-action="menu-lang" data-value="${code}">${esc(MENU.languageNames[code])}</button>`;
+  });
+  return `<div class="seg lang" role="group" aria-label="${esc(TEXT.language)}">${opts.join('')}</div>`;
 }
 
 function crestIcon() {
@@ -181,6 +201,8 @@ function chevronLeft() {
 }
 
 export function viewShell(s) {
+  // Every screen below reads its wording from labels.js, so set it first.
+  setLanguage(s.lang ?? 'en');
   if (s.screen === 'game' && s.play) return gameView(s.play, { board: s.board ?? '3d' });
   if (s.screen === 'mode') return modeView(s);
   return startView(s);

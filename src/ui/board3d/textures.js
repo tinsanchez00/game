@@ -6,7 +6,7 @@
 // draws with a fallback font until then.
 
 import * as THREE from '../../../vendor/three/three.module.js';
-import { POWER_INFO } from '../labels.js';
+import { language, POWER_INFO } from '../labels.js';
 import { POWER_ICONS } from '../powerIcons.js';
 
 const COL = {
@@ -76,11 +76,13 @@ function makeEntry(w, h, draw) {
 
 function cached(key, w, h, draw) {
   if (!canvasAvailable()) return null;
-  let e = cache.get(key);
+  // Keyed by language too: a card drawn in one language must not be reused in the other.
+  const k = `${language}|${key}`;
+  let e = cache.get(k);
   if (!e) {
     e = makeEntry(w, h, draw);
     if (!e) return null;
-    cache.set(key, e);
+    cache.set(k, e);
   }
   return e.tex;
 }

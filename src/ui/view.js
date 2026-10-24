@@ -36,11 +36,11 @@ function unitsMarkup(units, victims) {
 }
 
 function describeCell(slot, units) {
-  const where = slot.row === 1 ? 'Middle lane' : `${team(slot.player)}'s lane`;
+  const where = slot.row === 1 ? TEXT.middleLane : TEXT.lane(team(slot.player));
   const what = units.length
-    ? units.map((u) => `${team(u.player)} ${u.type}`).join(', ')
-    : 'empty';
-  return `${where}${slot.tower ? ', tower' : ''}${slot.campsite ? ', campsite' : ''}: ${what}`;
+    ? units.map((u) => `${team(u.player)} ${TEXT.unitName[u.type] ?? u.type}`).join(', ')
+    : TEXT.emptyCell;
+  return TEXT.cellLabel(where, slot.tower, slot.campsite, what);
 }
 
 function cell(slot, g, ix, victims, victimKeys) {
@@ -77,7 +77,7 @@ function board(g, viewer, ix, victims, victimKeys) {
   const slots = boardSlots(viewer, g.config);
   const columns = slots.filter((s) => s.row === 0).length;
   const cells = slots.map((s) => cell(s, g, ix, victims, victimKeys)).join('') + jumpLines(slots, columns, ix);
-  return `<section class="board-area" aria-label="Board">
+  return `<section class="board-area" aria-label="${esc(TEXT.board)}">
     <span class="lane">${esc(TEXT.lane(team(other)))}</span>
     <div class="board-frame"><div class="board" style="grid-template-columns: repeat(${columns}, minmax(0, 1fr))">${cells}</div></div>
     <span class="lane">${esc(TEXT.lane(team(viewer)))}</span>
@@ -178,7 +178,7 @@ function playerPanel(m, ix, victims, victimKeys) {
 
   const canDraw = ix.phase === 'draw';
   const deck = canDraw
-    ? `<button type="button" class="card back deck deck-card can" data-action="draw" aria-label="Draw a card"></button>`
+    ? `<button type="button" class="card back deck deck-card can" data-action="draw" aria-label="${esc(TEXT.drawCard)}"></button>`
     : '<div class="card back deck deck-card"></div>';
   const held = g.held[p];
   const power = held
@@ -285,7 +285,7 @@ function turnControls(m, ix, { cards3d = false } = {}) {
       status = S.draft(step);
       if (cards3d) break;
       const cards = R.draftOptions(g).map((id, i) =>
-        `<button type="button" class="card face power choice" data-action="keep" data-index="${i}" aria-label="Keep ${esc(powerName(id))}">${powerCard(id)}</button>`);
+        `<button type="button" class="card face power choice" data-action="keep" data-index="${i}" aria-label="${esc(TEXT.keep(powerName(id)))}">${powerCard(id)}</button>`);
       controls = `<div class="draft">${cards.join('')}</div>`;
       break;
     }
