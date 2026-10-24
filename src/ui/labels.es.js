@@ -24,15 +24,15 @@ const UPRIGHT_SHORT = {
   [POWERS.HANGED_MAN]: 'una unidad atrás y luego un turno extra',
   [POWERS.LOVERS]: 'una unidad salta hasta su aliado más cercano',
   [POWERS.DEVIL]: 'elimina las unidades junto a las tuyas',
-  [POWERS.TOWER]: 'saca una unidad de una torre y luego tu carta',
-  [POWERS.HERMIT]: 'muévete sobre un aliado y lo empujas',
+  [POWERS.TOWER]: 'avanza una unidad en una torre, luego te mueves',
+  [POWERS.HERMIT]: 'muévete sobre un aliado y este saltará',
 };
 const UPSIDE_SHORT = {
-  [POWERS.HANGED_MAN]: 'una unidad enemiga atrás y luego un turno extra',
+  [POWERS.HANGED_MAN]: 'mueve una unidad enemiga atrás y luego tienes un turno extra',
   [POWERS.LOVERS]: 'una unidad enemiga salta hasta su aliado más cercano',
   [POWERS.DEVIL]: 'atrae cada unidad una casilla',
   [POWERS.TOWER]: 'destruye todas las unidades de las torres',
-  [POWERS.HERMIT]: 'usa un número de tu pila de descarte',
+  [POWERS.HERMIT]: 'muévete con una carta del descarte',
 };
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -50,7 +50,7 @@ const TEXT = {
   yes: 'Sí',
   no: 'No',
   home: 'Inicio',
-  ascended: (n, total) => `Ascendidas ${n}/${total}`,
+  ascended: (n, total) => `Ascensos ${n}/${total}`,
   left: (n) => `${n} restantes`,
   drawn: 'Robada',
   drawCard: 'Robar una carta',
@@ -58,7 +58,7 @@ const TEXT = {
   discard: 'Descarte',
   discardEmpty: 'vacío',
   jokerShort: 'C',
-  jokerCard: 'COMODÍN',
+  jokerCard: 'JOKER',
   discardLabel: (team, cards) => `Pila de descarte de ${team}: ${cards || 'vacía'}`,
   power: 'Poder',
   noPower: 'Sin poder',
