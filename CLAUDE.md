@@ -16,6 +16,10 @@ inspired by the **Royal Game of Ur**. The owner is designing their own variant.
 - **Never commit** the rulebook, the decision log, design notes or rule
   explanations to this repo — not as files, comments, commit messages, issues
   or PR descriptions. Keep code comments technical.
+- **Exception (owner decision #164, 2026-10-24):** the short one-line power
+  summaries shown on screen (`src/ui/labels.en.js`, `src/ui/labels.es.js`) may
+  live in the repo, in both languages. Nothing longer than that: the full
+  rulebook and design notes stay private.
 
 ## The one rule: the owner makes every design decision
 
