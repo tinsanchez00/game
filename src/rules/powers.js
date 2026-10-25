@@ -5,8 +5,8 @@
 
 import { HOME, geometry } from './board.js';
 import { POWERS } from './cards.js';
-import { legalMoves, occupancy, sendHome, stepTarget, stepUnit } from './moves.js';
-import { countDeaths, getUnit, otherPlayer } from './state.js';
+import { legalMoves, occupancy, othersOn, sendHome, stepTarget, stepUnit } from './moves.js';
+import { countDeaths, getUnit, opponents } from './state.js';
 
 function onBoard(state, u) {
   return geometry(state.config).isOnBoard(u.pos);
@@ -29,7 +29,7 @@ export function loversTargets(state, unitId, occ = occupancy(state)) {
     for (let q = unit.pos + dir; q >= 1 && q <= g.pathLength; q += dir) {
       const c = g.cellIndex(me, q);
       const mine = occ[me][c];
-      const theirs = occ[otherPlayer(me)][c];
+      const theirs = othersOn(occ, me, c);
       if (mine + theirs === 0) continue;
       if (theirs === 0 && mine < state.config.maxPerCell) found.push(q);
       break;
@@ -47,15 +47,16 @@ function towerChoices(state) {
   const g = geometry(state.config);
   const occ = occupancy(state);
   return state.units
-    .filter((u) => g.isOnBoard(u.pos) && g.isTower(u.pos) && stepTarget(state, u.id, occ) !== null)
+    .filter((u) => g.isOnBoard(u.pos) && g.isTowerAt(u.player, u.pos) && stepTarget(state, u.id, occ) !== null)
     .map((u) => ({ unit: u.id }));
 }
 
-function loversChoices(state, player) {
+/** Lovers jumps for the units of `players` (a list). */
+function loversChoices(state, players) {
   const occ = occupancy(state);
   const out = [];
   for (const u of state.units) {
-    if (u.player !== player) continue;
+    if (!players.includes(u.player)) continue;
     for (const to of loversTargets(state, u.id, occ)) out.push({ unit: u.id, to });
   }
   return out;
@@ -79,7 +80,7 @@ export function powerChoices(state, player, power, { upsideDown = false } = {}) 
     case POWERS.TOWER:
       return upsideDown ? [{}] : towerChoices(state);
     case POWERS.LOVERS:
-      return loversChoices(state, upsideDown ? otherPlayer(player) : player);
+      return loversChoices(state, upsideDown ? opponents(state, player) : [player]);
     case POWERS.DEVIL:
       return upsideDown
         ? state.units.filter((u) => g.isShared(u.pos)).map((u) => ({ unit: u.id }))
@@ -118,15 +119,18 @@ function devilUpright(state, { unit }) {
 }
 
 /**
- * Upside-down Devil (a unit in the middle lane): every unit on the board
- * moves one cell toward it along its own path; reaching it, or sharing its
- * cell, kills.
+ * Upside-down Devil (a unit on a shared cell): every unit on the board moves
+ * one cell toward it along its own path; reaching it, or sharing its cell,
+ * kills. On a ring, a unit whose path doesn't pass the Devil's cell stays.
  */
 function devilUpsideDown(state, { unit }) {
   const g = geometry(state.config);
-  const c = getUnit(state, unit).pos; // a shared cell: the same path position for both teams
+  const devil = getUnit(state, unit);
+  const cell = g.cellIndex(devil.player, devil.pos);
   const units = state.units.map((u) => {
     if (u.id === unit || !g.isOnBoard(u.pos)) return u;
+    const c = g.posOf(u.player, cell); // where the Devil's cell is on this unit's path
+    if (c < 0) return u;
     if (u.pos === c) return { ...u, pos: HOME };
     const next = u.pos + Math.sign(c - u.pos);
     return next === c ? { ...u, pos: HOME } : { ...u, pos: next };
@@ -136,7 +140,7 @@ function devilUpsideDown(state, { unit }) {
 
 function towerDestroy(state) {
   const g = geometry(state.config);
-  const units = sendHome(state.units, (u) => g.isOnBoard(u.pos) && g.isTower(u.pos));
+  const units = sendHome(state.units, (u) => g.isOnBoard(u.pos) && g.isTowerAt(u.player, u.pos));
   return countDeaths(state, { ...state, units });
 }
 

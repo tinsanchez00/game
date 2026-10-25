@@ -31,7 +31,8 @@ test('defaults match the rulebook', () => {
   assert.equal(c.commanders, 1);
   assert.equal(c.maxPerCell, 2);
   assert.deepEqual({ ...c.board, towers: [...c.board.towers], campsites: [...c.board.campsites] },
-    { startLane: 3, middleLane: 9, endLane: 2, towers: [7, 14], campsites: [5] });
+    { startLane: 3, middleLane: 9, endLane: 2, towers: [7, 14], campsites: [5], ring: 0 });
+  assert.equal(c.players, 2);
   assert.ok(Object.isFrozen(c) && Object.isFrozen(c.board.towers) && Object.isFrozen(c.board.campsites));
 });
 

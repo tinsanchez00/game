@@ -54,7 +54,8 @@ export function startApp(root) {
   // 3D board: null until loaded; `failed` when WebGL or the module is unavailable.
   const three = { view: null, loading: null, failed: false };
 
-  const boardStyle = () => (three.failed ? 'flat' : shell.board);
+  // 3-4 player games use the flat ring board (the 3D table has two sides only).
+  const boardStyle = () => (three.failed || (shell.play?.game.config.players ?? 2) > 2 ? 'flat' : shell.board);
 
   function loadThree() {
     three.loading ??= import('./board3d/mount.js')

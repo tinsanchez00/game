@@ -1,7 +1,7 @@
 // Game modes for the "Game mode" screen: named presets of a small settings
 // object, and its translation into a rules config. Pure: no DOM.
 //
-// settings = { units, powers, deck, timing, jokers,
+// settings = { players, units, powers, deck, timing, jokers,
 //              commanderLock, escort, towersProtect, towerExtraTurn, exactAscend }
 // deck: the powers in the power deck (ids, in POWER_IDS order).
 
@@ -12,6 +12,7 @@ const NUMBERS = D.moveDeck.filter((c) => c !== JOKER);
 
 /** The standard rules as settings. */
 export const STANDARD = Object.freeze({
+  players: D.players,
   units: D.soldiers + D.commanders,
   powers: D.powers,
   deck: Object.freeze(POWER_IDS.filter((id) => D.powerDeck.includes(id))),
@@ -31,6 +32,9 @@ export const PRESETS = Object.freeze([
   { id: 'noPowers', changes: { powers: false } },
   { id: 'twoJokers', changes: { jokers: 2 } },
   { id: 'urTowers', changes: { towerExtraTurn: true } },
+  // 3-4 players: the ring board; teams of 5 by default.
+  { id: 'threePlayers', changes: { players: 3, units: 5 } },
+  { id: 'fourPlayers', changes: { players: 4, units: 5 } },
 ]);
 
 /**
@@ -39,6 +43,7 @@ export const PRESETS = Object.freeze([
  * when it returns true for the current settings.
  */
 export const FIELDS = Object.freeze([
+  { key: 'players', kind: 'choice', values: [2, 3, 4] },
   { key: 'units', kind: 'choice', values: [5, 6] },
   { key: 'powers', kind: 'switch' },
   { key: 'deck', kind: 'multi', values: [...POWER_IDS], when: (s) => s.powers },
@@ -90,6 +95,7 @@ export function parseValue(key, raw) {
 /** Config overrides for createGame. */
 export function toConfig(s) {
   return {
+    players: s.players, // 3-4: the ring board's defaults fill in the board (config.js)
     soldiers: s.units - D.commanders,
     // No power left in the deck plays like powers off: a Joker means no move.
     powers: s.powers && s.deck.length > 0,

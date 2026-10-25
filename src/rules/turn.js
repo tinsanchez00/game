@@ -22,7 +22,7 @@
 
 import { JOKER, POWERS, isNumberCard, upsideDownCost } from './cards.js';
 import { DUD, POWER_TIMINGS } from './config.js';
-import { otherPlayer } from './state.js';
+import { opponents, playersOf } from './state.js';
 import { continueTurn, drawTurnCard, endTurn, legalMoves, occupancy, playNumberCard, turnMoves } from './moves.js';
 import { applyPower, powerChoices } from './powers.js';
 
@@ -141,8 +141,9 @@ function canUseSide(state, upsideDown) {
     case POWERS.HANGED_MAN: {
       if (before) return true;
       if (!isNumberCard(card)) return false;
-      const mover = upsideDown ? otherPlayer(player) : player;
-      return legalMoves(state, mover, card, occupancy(state), { backward: true, only: null, alone: upsideDown }).length > 0;
+      const movers = upsideDown ? opponents(state, player) : [player];
+      const occ = occupancy(state);
+      return movers.some((q) => legalMoves(state, q, card, occ, { backward: true, only: null, alone: upsideDown }).length > 0);
     }
     case POWERS.HERMIT:
       if (upsideDown) return powerChoices(state, player, power, { upsideDown }).length > 0;
@@ -192,7 +193,7 @@ function useSide(state, args, upsideDown) {
   const after = applyPower(state, player, power, args, { upsideDown });
   const held = [...after.held];
   held[player] = null;
-  const stars = [...(after.stars ?? [0, 0])];
+  const stars = [...(after.stars ?? playersOf(state).map(() => 0))];
   if (upsideDown) stars[player] -= upsideDownCost(power);
   const used = { ...after, held, stars, powerDeck: [...after.powerDeck, power] };
   if (used.winner !== null) return used; // the Tower's step can end the game

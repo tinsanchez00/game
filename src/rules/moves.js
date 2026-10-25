@@ -16,7 +16,7 @@
 
 import { HOME, geometry } from './board.js';
 import { nextRandom, shuffle as shuffleCards } from './random.js';
-import { countDeaths, getUnit, otherPlayer } from './state.js';
+import { countDeaths, getUnit, nextPlayer, opponents } from './state.js';
 
 export const MAX_UNITS_PER_CELL = 2; // default; games use state.config.maxPerCell
 
@@ -30,7 +30,7 @@ export function unitsOnCell(state, cell) {
 /** Per-player unit counts indexed by physical cell index. */
 export function occupancy(state) {
   const g = geometry(state.config);
-  const occ = [new Uint8Array(g.cellCount), new Uint8Array(g.cellCount)];
+  const occ = Array.from({ length: g.players }, () => new Uint8Array(g.cellCount));
   for (const u of state.units) {
     const c = g.cellIndex(u.player, u.pos);
     if (c >= 0) occ[u.player][c] += 1;
@@ -61,19 +61,34 @@ function destination(state, g, unit, steps, backward) {
   return state.config.rules.exactAscend ? null : g.ascended;
 }
 
+/** Units of every team but `player`'s on physical cell `c`. */
+export function othersOn(occ, player, c) {
+  let n = 0;
+  for (let q = 0; q < occ.length; q += 1) if (q !== player) n += occ[q][c];
+  return n;
+}
+
 /** Can `count` units of `player` land on path position `target`? */
 function canLand(state, g, occ, player, target, count) {
   if (target === HOME || target === g.ascended) return true;
   const c = g.cellIndex(player, target);
-  const enemy = occ[otherPlayer(player)][c];
-  if (enemy > 0 && g.isTower(target) && state.config.rules.towersProtect) return false;
+  const enemy = othersOn(occ, player, c);
+  if (enemy > 0 && g.isTowerCell(c) && state.config.rules.towersProtect) return false;
   return occ[player][c] + count <= state.config.maxPerCell;
+}
+
+/** `units` with every other team's units on the cell `player` reaches at `target` sent home. */
+function captureAt(g, units, player, target) {
+  const cell = g.cellIndex(player, target);
+  if (cell < 0) return units;
+  return units.map((u) => (u.player !== player && g.cellIndex(u.player, u.pos) === cell ? { ...u, pos: HOME } : u));
 }
 
 /**
  * How the current card moves units: backward (Hanged Man), only one unit
- * (campsite card), onto an ally (Hermit), and whose units move (`player`:
- * the opponent's for the upside-down Hanged Man).
+ * (campsite card), onto an ally (Hermit), and whose units move (`players`:
+ * every opponent's for the upside-down Hanged Man; `player` is the first of
+ * them, which in a two-player game is the opponent).
  */
 export function cardMode(state, player = state.current) {
   if (player !== state.current) return { backward: false, only: null };
@@ -81,9 +96,9 @@ export function cardMode(state, player = state.current) {
   if (campsite) return { backward: false, only: campsite.unit };
   if (hermit?.stage === 'move') return { backward: false, only: null, hermit: true };
   if (hanged?.stage === 'back') {
-    return hanged.enemy
-      ? { backward: true, only: null, alone: true, player: otherPlayer(state.current) }
-      : { backward: true, only: null };
+    if (!hanged.enemy) return { backward: true, only: null };
+    const players = opponents(state);
+    return { backward: true, only: null, alone: true, player: players[0], players };
   }
   return { backward: false, only: null };
 }
@@ -127,12 +142,13 @@ export function legalMoves(state, player, steps, occ = occupancy(state), mode = 
 
 /**
  * The moves the current card offers: the current player's, or the
- * opponent's units moving back for the upside-down Hanged Man.
+ * opponents' units moving back for the upside-down Hanged Man.
  */
 export function turnMoves(state, steps = state.drawn) {
   const mode = cardMode(state);
-  const player = mode.player ?? state.current;
-  return legalMoves(state, player, steps, occupancy(state), mode);
+  const occ = occupancy(state);
+  const players = mode.players ?? [state.current];
+  return players.flatMap((p) => legalMoves(state, p, steps, occ, mode));
 }
 
 function sameMove(a, b) {
@@ -145,7 +161,7 @@ export function sendHome(units, predicate) {
 }
 
 /** Sets state.winner when a team has ascended every unit (null: no change). */
-function decideWinner(state, order = [state.current, otherPlayer(state.current)]) {
+function decideWinner(state, order = [state.current, ...opponents(state)]) {
   const g = geometry(state.config);
   for (const p of order) {
     if (state.units.every((u) => u.player !== p || u.pos === g.ascended)) {
@@ -168,7 +184,7 @@ export function endTurn(state, extraTurn = false) {
     campsite: null,
     hermit: null,
     bonusTurn: false,
-    current: keep ? state.current : otherPlayer(state.current),
+    current: keep ? state.current : nextPlayer(state),
   };
 }
 
@@ -194,7 +210,7 @@ export function continueTurn(state, landing = null) {
   const g = geometry(state.config);
   const done = { ...state, drawn: null, campsite: null };
   // An opponent's unit moved back by the Hanged Man doesn't use the campsite.
-  if (landing && g.isCampsite(landing.pos) && !done.hanged?.enemy) {
+  if (landing && g.isCampsiteAt(done.current, landing.pos) && !done.hanged?.enemy) {
     const pick = pickFromDiscard(done);
     if (pick) return { ...done, rng: pick.rng, drawn: pick.card, campsite: { unit: landing.unit } };
   }
@@ -251,22 +267,17 @@ export function stepTarget(state, unitId, occ = occupancy(state)) {
 
 /**
  * Moves `unitId` one cell forward on its own path (The Tower): it captures
- * the other team's units there; it may ascend, and may decide the game.
+ * the other teams' units there; it may ascend, and may decide the game.
  * The turn itself is untouched. Assumes stepTarget(state, unitId) !== null.
  */
 export function stepUnit(state, unitId) {
   const g = geometry(state.config);
   const unit = getUnit(state, unitId);
   const target = unit.pos + 1;
-  const cell = g.cellIndex(unit.player, target);
-  const enemy = otherPlayer(unit.player);
-  const units = state.units.map((u) => {
-    if (u.id === unitId) return { ...u, pos: target };
-    if (cell >= 0 && u.player === enemy && g.cellIndex(enemy, u.pos) === cell) return { ...u, pos: HOME };
-    return u;
-  });
+  const units = captureAt(g, state.units, unit.player, target)
+    .map((u) => (u.id === unitId ? { ...u, pos: target } : u));
   const next = countDeaths(state, { ...state, units }, [unitId]);
-  return decideWinner(next, [unit.player, enemy]) ?? next;
+  return decideWinner(next, [unit.player, ...opponents(state, unit.player)]) ?? next;
 }
 
 // --- moves --------------------------------------------------------------------------
@@ -280,25 +291,18 @@ export function applyLegalMove(state, move, steps) {
   const mode = cardMode(state);
   const { backward } = mode;
   const mover = getUnit(state, move.unit);
-  const player = mover.player; // the opponent's, for the upside-down Hanged Man
+  const player = mover.player; // an opponent's, for the upside-down Hanged Man
   const target = destination(state, g, mover, steps, backward);
-  const targetCell = g.cellIndex(player, target);
-  const enemy = otherPlayer(player);
 
-  const units = state.units.map((u) => {
-    if (u.id === move.unit || u.id === move.escort) return { ...u, pos: target };
-    if (targetCell >= 0 && u.player === enemy && g.cellIndex(enemy, u.pos) === targetCell) {
-      return { ...u, pos: HOME };
-    }
-    return u;
-  });
+  const units = captureAt(g, state.units, player, target)
+    .map((u) => (u.id === move.unit || u.id === move.escort ? { ...u, pos: target } : u));
   // Captured units give their owner stars (a mover sent home backward isn't a death).
   const { stars } = countDeaths(state, { ...state, units }, [move.unit, move.escort].filter(Boolean));
 
   const won = decideWinner({ ...state, units, stars }, [player]);
   if (won) return won;
 
-  const towerTurn = state.config.rules.towerExtraTurn && !backward && g.isTower(target);
+  const towerTurn = state.config.rules.towerExtraTurn && !backward && g.isTowerAt(player, target);
   const next = { ...state, units, stars, bonusTurn: Boolean(state.bonusTurn) || towerTurn };
   if (backward) next.hanged = { ...state.hanged, stage: 'back', unit: move.unit };
   return continueTurn(next, { unit: move.unit, pos: target });

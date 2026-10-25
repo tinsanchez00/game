@@ -203,7 +203,10 @@ function chevronLeft() {
 export function viewShell(s) {
   // Every screen below reads its wording from labels.js, so set it first.
   setLanguage(s.lang ?? 'en');
-  if (s.screen === 'game' && s.play) return gameView(s.play, { board: s.board ?? '3d' });
+  if (s.screen === 'game' && s.play) {
+    const flat = s.play.game.config.players > 2; // the 3D table has two sides only
+    return gameView(s.play, { board: flat ? 'flat' : s.board ?? '3d' });
+  }
   if (s.screen === 'mode') return modeView(s);
   return startView(s);
 }

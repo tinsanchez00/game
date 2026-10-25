@@ -220,7 +220,7 @@ export function interactions(m) {
 function describe(before, after, actor) {
   const events = [];
   const asc = R.geometry(after.config).ascended;
-  for (const player of R.PLAYERS) {
+  for (const player of R.playersOf(after)) {
     const lost = changedToHome(before, after).filter((id) => R.getUnit(after, id).player === player);
     if (lost.length) events.push({ type: 'lost', player, count: lost.length });
     const ascended = after.units.filter(

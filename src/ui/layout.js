@@ -66,3 +66,46 @@ export function boardSlots(viewer, config = DEFAULT_CONFIG) {
   }
   return slots;
 }
+
+// --- the ring board (3-4 players) ----------------------------------------------
+
+/**
+ * Cells of a ring board as seen by `viewer` (their gate at the bottom),
+ * in board units centred on the ring's middle (1 = one cell):
+ * [{ key, x, y, rot, tower, campsite, owner, shared }] plus { size } = the
+ * half-width of the area the cells need. Each player's start lane points
+ * outward from their gate, their end lane inward toward the centre, where
+ * units ascend. Pure: no DOM.
+ */
+export function ringSlots(viewer, config) {
+  const g = geometry(config);
+  const N = g.ring;
+  const R = (N / (2 * Math.PI)) * 1.22;
+  const at = (j, radius) => {
+    const deg = 90 + ((j - g.gate(viewer)) * 360) / N;
+    const a = (deg * Math.PI) / 180;
+    return { x: radius * Math.cos(a), y: radius * Math.sin(a), rot: deg - 90 };
+  };
+  const cells = new Map();
+  for (let p = 0; p < g.players; p += 1) {
+    const gate = g.gate(p);
+    for (let pos = 1; pos <= g.pathLength; pos += 1) {
+      const key = g.cellId(p, pos);
+      if (cells.has(key)) continue;
+      let spot;
+      if (pos < g.middleFirst) spot = at(gate, R + (g.middleFirst - pos));
+      else if (pos <= g.middleLast) spot = at(gate + pos - g.middleFirst, R);
+      else spot = at(gate + g.middleLane - 1, R - (pos - g.middleLast));
+      const shared = g.isShared(pos);
+      cells.set(key, {
+        key,
+        ...spot,
+        tower: g.isTowerAt(p, pos),
+        campsite: g.isCampsiteAt(p, pos),
+        owner: shared ? null : p,
+        shared,
+      });
+    }
+  }
+  return { cells: [...cells.values()], size: R + g.startLane + 0.6 };
+}

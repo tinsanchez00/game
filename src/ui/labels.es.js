@@ -3,7 +3,8 @@
 
 import { POWERS } from '../rules/index.js';
 
-const TEAM_NAMES = ['Oro', 'Obsidiana'];
+// Teams 3 and 4: placeholder names.
+const TEAM_NAMES = ['Oro', 'Obsidiana', 'Cornalina', 'Perla'];
 
 const POWER_INFO = {
   [POWERS.HANGED_MAN]: { name: 'El Colgado', numeral: 'XII' },
@@ -167,8 +168,11 @@ const MENU = {
     noPowers: { name: 'Sin poderes' },
     twoJokers: { name: 'Dos comodines' },
     urTowers: { name: 'Torres de Ur' },
+    threePlayers: { name: '3 jugadores' },
+    fourPlayers: { name: '4 jugadores' },
   },
   field: {
+    players: 'Jugadores',
     units: 'Unidades cada uno',
     powers: 'Poderes',
     deck: 'Poderes en el mazo',
@@ -190,6 +194,7 @@ const MENU = {
     const missing = Object.entries(MENU_DECK).filter(([id]) => !s.deck.includes(id)).map(([, name]) => `sin ${name}`);
     const powers = !s.powers || n === 0 ? 'sin poderes' : n === 5 ? 'los cinco poderes' : `${n} poder${n === 1 ? '' : 'es'}: ${missing.join(', ')}`;
     const parts = [`${s.units} unidades cada uno`, powers, `${plural(s.jokers, 'comodín', 'comodines')}`];
+    if (s.players > 2) parts.unshift(`${s.players} jugadores`);
     if (s.powers && s.timing !== 'afterDraw') parts.push('poderes antes de robar');
     if (s.towerExtraTurn) parts.push('las torres dan otro turno');
     if (!s.commanderLock) parts.push('sin bloqueo del comandante');

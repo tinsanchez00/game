@@ -182,3 +182,45 @@ test('game mode: choose which powers are in the deck', () => {
   started = act(s, 'menu-start');
   assert.equal(started.play.game.config.powers, false);
 });
+
+test('3 and 4 players: presets with teams of 5 start a ring game on the flat board', () => {
+  for (const [preset, n] of [['threePlayers', 3], ['fourPlayers', 4]]) {
+    let s = act(act(initShell(), 'menu-mode'), 'menu-preset', { value: preset });
+    assert.match(viewShell(s), new RegExp(`${n} players`));
+    s = act(s, 'menu-start');
+    const g = s.play.game;
+    assert.equal(g.config.players, n);
+    assert.equal(g.config.board.ring, n === 4 ? 16 : 15);
+    assert.equal(R.teamSize(g.config), 5);
+    const html = viewShell(s);
+    assert.match(html, /class="ring-frame"/, 'the ring board, even with the 3D board chosen');
+    assert.doesNotMatch(html, /data-board3d/);
+    assert.equal((html.match(/class="panel opponent"/g) ?? []).length, n - 1, 'a panel for every opponent');
+    const cells = (html.match(/ring-cell/g) ?? []).length;
+    assert.equal(cells, R.geometry(g.config).cellCount, 'every cell drawn once');
+  }
+});
+
+test('ring board: the cells you can move from are tappable, and a move goes through', () => {
+  let s = act(act(act(initShell(), 'menu-mode'), 'menu-preset', { value: 'fourPlayers' }), 'menu-start');
+  if (interactions(s.play).phase === 'handoff') s = act(s, 'handoff');
+  // Draw until a number card with a move comes up.
+  for (let i = 0; i < 20; i += 1) {
+    const ix = interactions(s.play);
+    if (ix.phase === 'move') break;
+    if (ix.phase === 'draw') s = act(s, 'draw');
+    else if (ix.phase === 'handoff') s = act(s, 'handoff');
+    else if (ix.phase === 'draft') s = act(s, 'keep', { index: 0 });
+    else s = act(s, 'continue');
+  }
+  const ix = interactions(s.play);
+  assert.equal(ix.phase, 'move');
+  const key = ix.tappable[0];
+  assert.match(viewShell(s), new RegExp(`data-action="tap" data-key="${key}"`));
+  const mover = s.play.game.current;
+  s = act(s, 'tap', { key });
+  const after = interactions(s.play);
+  if (after.options.length) s = act(s, 'option', { value: after.options[0] });
+  s = act(s, 'confirm');
+  assert.ok(s.play.game.current !== mover || s.play.game.campsite || s.play.game.bonusTurn !== undefined);
+});

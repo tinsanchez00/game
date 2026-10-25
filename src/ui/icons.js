@@ -6,7 +6,7 @@ const CROWN =
   'M6.6 9.3 6.2 3.4l3 2.6L12 2.2l2.8 3.8 3-2.6-.4 5.9C16.2 7.6 14.3 6.8 12 6.8s-4.2.8-5.4 2.5Z';
 const TOWER = 'M6 21V9h12v12M6 9V4h2.5v2.2h2.2V4h2.6v2.2h2.2V4H18v5M10 21v-4.5h4V21';
 
-export const TEAM_CLASS = ['gold', 'obsidian'];
+export const TEAM_CLASS = ['gold', 'obsidian', 'carnelian', 'pearl'];
 
 export function unitIcon(unit, extraClass = '') {
   const crown = unit.type === 'commander' ? `<path d="${CROWN}"></path>` : '';

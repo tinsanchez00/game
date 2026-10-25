@@ -3,7 +3,8 @@
 
 import { POWERS } from '../rules/index.js';
 
-const TEAM_NAMES = ['Gold', 'Obsidian'];
+// Teams 3 and 4: placeholder names.
+const TEAM_NAMES = ['Gold', 'Obsidian', 'Carnelian', 'Pearl'];
 
 const POWER_INFO = {
   [POWERS.HANGED_MAN]: { name: 'The Hanged Man', numeral: 'XII' },
@@ -167,8 +168,11 @@ const MENU = {
     noPowers: { name: 'No powers' },
     twoJokers: { name: 'Two Jokers' },
     urTowers: { name: 'Ur towers' },
+    threePlayers: { name: '3 players' },
+    fourPlayers: { name: '4 players' },
   },
   field: {
+    players: 'Players',
     units: 'Units each',
     powers: 'Powers',
     deck: 'Powers in the deck',
@@ -190,6 +194,7 @@ const MENU = {
     const missing = Object.entries(MENU_DECK).filter(([id]) => !s.deck.includes(id)).map(([, name]) => `no ${name}`);
     const powers = !s.powers || n === 0 ? 'no powers' : n === 5 ? 'all five powers' : `${n} power${n === 1 ? '' : 's'}: ${missing.join(', ')}`;
     const parts = [`${s.units} units each`, powers, `${s.jokers} Joker${s.jokers === 1 ? '' : 's'}`];
+    if (s.players > 2) parts.unshift(`${s.players} players`);
     if (s.powers && s.timing !== 'afterDraw') parts.push('powers before draw');
     if (s.towerExtraTurn) parts.push('towers give another turn');
     if (!s.commanderLock) parts.push('no commander lock');

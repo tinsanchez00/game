@@ -3,9 +3,9 @@
 
 import * as R from '../rules/index.js';
 import { interactions, unitKey } from './controller.js';
-import { campsiteGlyph, heartIcon, lockIcon, towerGlyph, unitIcon } from './icons.js';
+import { TEAM_CLASS, campsiteGlyph, heartIcon, lockIcon, towerGlyph, unitIcon } from './icons.js';
 import { powerIconSvg } from './powerIcons.js';
-import { boardSlots } from './layout.js';
+import { boardSlots, ringSlots } from './layout.js';
 import { OPTION_LABELS, POWER_INFO, TEAM_NAMES, TEXT } from './labels.js';
 
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -72,7 +72,34 @@ function jumpLines(slots, columns, ix) {
   }).join('');
 }
 
+/** The ring board (3-4 players), turned so the viewer's gate is at the bottom. */
+function ringBoard(g, viewer, ix, victims, victimKeys) {
+  const { cells, size } = ringSlots(viewer, g.config);
+  const pct = (v) => ((v + size) / (2 * size)) * 100;
+  const w = (0.86 / (2 * size)) * 100;
+  const html = cells.map((c) => {
+    const units = g.units.filter((u) => unitKey(g, u) === c.key);
+    const cls = ['ring-cell', 'cell', ...(c.tower ? ['tower'] : []), ...(c.campsite ? ['campsite'] : []),
+      ...(c.owner !== null ? ['own', `own-${TEAM_CLASS[c.owner]}`] : []),
+      ...stateClasses(c.key, ix, victimKeys)];
+    const style = `left: ${(pct(c.x) - w / 2).toFixed(2)}%; top: ${(pct(c.y) - w / 2).toFixed(2)}%; width: ${w.toFixed(2)}%; height: ${w.toFixed(2)}%; transform: rotate(${c.rot.toFixed(1)}deg)`;
+    const inner = `<span class="upright" style="transform: rotate(${(-c.rot).toFixed(1)}deg)">${(c.tower ? towerGlyph() : '') + (c.campsite ? campsiteGlyph() : '') + unitsMarkup(units, victims)}</span>`;
+    const where = c.shared ? TEXT.middleLane : TEXT.lane(team(c.owner));
+    const what = units.length ? units.map((u) => `${team(u.player)} ${TEXT.unitName[u.type] ?? u.type}`).join(', ') : TEXT.emptyCell;
+    const label = esc(TEXT.cellLabel(where, c.tower, c.campsite, what));
+    if (interactive(cls)) {
+      return `<button type="button" class="${cls.join(' ')}" style="${style}" data-action="tap" data-key="${c.key}" aria-label="${label}">${inner}</button>`;
+    }
+    return `<div class="${cls.join(' ')}" style="${style}" role="img" aria-label="${label}">${inner}</div>`;
+  }).join('');
+  const t = (1.1 / (2 * size)) * 100;
+  return `<section class="board-area" aria-label="${esc(TEXT.board)}">
+    <div class="ring-frame">${html}<div class="ring-throne" style="left: ${(50 - t / 2).toFixed(2)}%; top: ${(50 - t / 2).toFixed(2)}%; width: ${t.toFixed(2)}%; height: ${t.toFixed(2)}%" aria-hidden="true"></div></div>
+  </section>`;
+}
+
 function board(g, viewer, ix, victims, victimKeys) {
+  if (g.config.players > 2) return ringBoard(g, viewer, ix, victims, victimKeys);
   const other = R.otherPlayer(viewer);
   const slots = boardSlots(viewer, g.config);
   const columns = slots.filter((s) => s.row === 0).length;
@@ -135,6 +162,13 @@ function opponentPanel(g, player) {
     </div>
     ${discardRow(g, player)}
   </section>`;
+}
+
+/** Every other player's panel, in turn order after the viewer. */
+function opponentsMarkup(g, viewer) {
+  const others = R.opponents(g, viewer);
+  if (others.length === 1) return opponentPanel(g, others[0]);
+  return `<div class="opponents many">${others.map((p) => opponentPanel(g, p)).join('')}</div>`;
 }
 
 function tray(key, content, ix, victimKeys, label) {
@@ -408,7 +442,7 @@ export function view(m, { board: style = 'flat' } = {}) {
   const victimKeys = new Set(ix.victims.map((id) => unitKey(g, R.getUnit(g, id))));
   return `<div class="app">
     ${topBar(m)}
-    ${opponentPanel(g, R.otherPlayer(m.ui.viewer))}
+    ${opponentsMarkup(g, m.ui.viewer)}
     ${board(g, m.ui.viewer, ix, victims, victimKeys)}
     ${playerPanel(m, ix, victims, victimKeys)}
     ${ix.phase === 'won' ? winOverlay(g) : ''}

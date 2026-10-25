@@ -25,6 +25,7 @@ export const DUD = 'dud';
 export const CARD_IDS = Object.freeze([...POWER_IDS, DUD]);
 
 export const DEFAULT_CONFIG = deepFreeze({
+  players: 2, // 2, 3 or 4; with more than 2 the board is a ring (multiplayerDefaults)
   // false: a joker is a no-move card and the power deck is unused.
   powers: true,
   powerTiming: 'afterDraw', // see POWER_TIMINGS
@@ -39,6 +40,7 @@ export const DEFAULT_CONFIG = deepFreeze({
     endLane: 2, // private cells after the shared lane
     towers: [7, 14], // path positions (1 = first cell of the path)
     campsites: [5], // path positions; landing with a card move draws from the discard pile
+    ring: 0, // 0: the two-player board; else the number of shared cells in a loop (3-4 players)
   },
   rules: {
     exactAscend: true, // false: any card that reaches past the last cell ascends
@@ -49,6 +51,25 @@ export const DEFAULT_CONFIG = deepFreeze({
     upsideDown: true, // false: powers can only be used upright (stars are still counted)
   },
 });
+
+/**
+ * Defaults that differ with 3 or 4 players: a ring of 15 / 16 shared cells,
+ * paths of 2 start, 8 shared and 2 end cells (special cells at the same
+ * places along the shared part), teams of 5 units.
+ */
+export function multiplayerDefaults(players) {
+  return {
+    soldiers: 4,
+    board: {
+      startLane: 2,
+      middleLane: 8,
+      endLane: 2,
+      towers: [6, 12],
+      campsites: [4],
+      ring: players === 4 ? 16 : 15,
+    },
+  };
+}
 
 function deepFreeze(obj) {
   for (const value of Object.values(obj)) {
@@ -83,6 +104,7 @@ export function pathLengthOf(board) {
 }
 
 export function validateConfig(c) {
+  check([2, 3, 4].includes(c.players), 'players must be 2, 3 or 4');
   check(typeof c.powers === 'boolean', 'powers must be true or false');
   check(Object.values(POWER_TIMINGS).includes(c.powerTiming),
     `powerTiming must be one of ${Object.values(POWER_TIMINGS).join(', ')}`);
@@ -118,6 +140,13 @@ export function validateConfig(c) {
     check(isInt(t) && t >= 1 && t <= length, `campsite ${t} is outside the path (1-${length})`);
     check(!b.towers.includes(t), `cell ${t} can't be both a tower and a campsite`);
   }
+  check(isInt(b.ring) && b.ring >= 0, 'board.ring must be 0 or more');
+  if (c.players === 2) {
+    check(b.ring === 0, 'board.ring is only for 3 or 4 players');
+  } else {
+    check(b.ring >= b.middleLane, 'board.ring must be at least board.middleLane');
+    check(b.ring % c.players === 0, 'board.ring must split evenly between the players');
+  }
 
   for (const [k, v] of Object.entries(c.rules)) {
     check(typeof v === 'boolean', `rules.${k} must be true or false`);
@@ -131,7 +160,11 @@ export function makeConfig(overrides = {}) {
     // Already a complete config (e.g. reused from another game).
     return validateConfig(overrides);
   }
-  const merged = merge(structuredClone(DEFAULT_CONFIG), structuredClone(overrides));
+  let base = structuredClone(DEFAULT_CONFIG);
+  if (overrides.players !== undefined && overrides.players !== 2) {
+    base = merge(base, { players: overrides.players, ...multiplayerDefaults(overrides.players) });
+  }
+  const merged = merge(base, structuredClone(overrides));
   merged.board.towers = [...merged.board.towers].sort((a, b) => a - b);
   merged.board.campsites = [...merged.board.campsites].sort((a, b) => a - b);
   return deepFreeze(validateConfig(merged));
