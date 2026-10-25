@@ -20,13 +20,13 @@ function drawing(positions, { deck = [2], discard = [], rng = 1, ...extra } = {}
   }));
 }
 
-test('landing on the campsite: a card from your discard pile moves the same unit again', () => {
+test('landing on the campsite: the same unit moves the same number again', () => {
   let g = drawing({ 'p0-s1': 3, 'p0-s2': 1 });
   g = playDrawnNumber(g, { unit: 'p0-s1' });
   assert.equal(pos(g, 'p0-s1'), 5);
   assert.equal(g.current, 0);
   assert.deepEqual(g.campsite, { unit: 'p0-s1' });
-  assert.equal(g.drawn, 2, "this turn's card is in the discard pile");
+  assert.equal(g.drawn, 2, 'the landing move again');
   assert.deepEqual(g.moveDecks[0], { draw: [], discard: [2] }, 'the card stays in the discard pile');
   assert.deepEqual(currentMoves(g).map((m) => m.unit), ['p0-s1']);
   assert.ok(!canUsePower(g));
@@ -36,14 +36,45 @@ test('landing on the campsite: a card from your discard pile moves the same unit
   assert.equal(g.campsite, null);
 });
 
-test('the campsite card is picked at random from the whole discard pile', () => {
-  const seen = new Map();
-  for (let rng = 1; rng <= 400; rng += 1) {
-    const g = playDrawnNumber(drawing({ 'p0-s1': 3 }, { discard: [1, 1, 4], rng }), { unit: 'p0-s1' });
-    seen.set(g.drawn, (seen.get(g.drawn) ?? 0) + 1);
+test('the campsite repeats the landing move\'s number, whatever is in the discard pile', () => {
+  for (const discard of [[1, 1, 4], [JOKER, JOKER], []]) {
+    for (let rng = 1; rng <= 20; rng += 1) {
+      const g = playDrawnNumber(drawing({ 'p0-s1': 3 }, { discard, rng }), { unit: 'p0-s1' });
+      assert.equal(g.drawn, 2);
+      assert.equal(g.rng, rng, 'no random pick');
+    }
   }
-  assert.deepEqual([...seen.keys()].sort(), [1, 2, 4]);
-  assert.ok(seen.get(1) > seen.get(4), 'two 1s are twice as likely as one 4');
+});
+
+test('a repeat that lands on a campsite again repeats again', () => {
+  const base = createGame({ seed: 1, firstPlayer: 0, config: { board: { campsites: [5, 7], towers: [14] } } });
+  let g = drawCard({
+    ...base,
+    units: base.units.map((u) => (u.id === 'p0-s1' ? { ...u, pos: 3 } : u)),
+    moveDecks: [{ draw: [2], discard: [] }, { draw: [1], discard: [] }],
+  });
+  g = playDrawnNumber(g, { unit: 'p0-s1' });
+  assert.equal(pos(g, 'p0-s1'), 5);
+  g = playDrawnNumber(g, { unit: 'p0-s1' });
+  assert.equal(pos(g, 'p0-s1'), 7);
+  assert.deepEqual(g.campsite, { unit: 'p0-s1' });
+  assert.equal(g.drawn, 2);
+  g = playDrawnNumber(g, { unit: 'p0-s1' });
+  assert.equal(pos(g, 'p0-s1'), 9);
+  assert.equal(g.current, 1);
+});
+
+test('a Hanged Man move backward onto the campsite repeats forward, then the extra turn', () => {
+  let g = drawing({ 'p0-s1': 7 }, { deck: [2, 1], held: [POWERS.HANGED_MAN, null] });
+  g = playDrawnNumber(usePower(g), { unit: 'p0-s1' });
+  assert.equal(pos(g, 'p0-s1'), 5);
+  assert.deepEqual(g.campsite, { unit: 'p0-s1' });
+  assert.equal(g.drawn, 2);
+  assert.deepEqual(currentMoves(g), [{ unit: 'p0-s1' }]);
+  g = playDrawnNumber(g, { unit: 'p0-s1' });
+  assert.equal(pos(g, 'p0-s1'), 7, 'forward');
+  assert.equal(g.current, 0, 'the extra turn follows');
+  assert.equal(g.drawn, null);
 });
 
 test('the campsite move must be made when it is valid', () => {
@@ -57,44 +88,6 @@ test('if the campsite move is not valid, the unit stays', () => {
   g = playDrawnNumber(g, null);
   assert.equal(pos(g, 'p0-s1'), 5);
   assert.equal(g.current, 1);
-});
-
-/** A seed whose campsite pick is a joker from a pile of jokers and one 2. */
-function jokerPick(positions, extra = {}) {
-  for (let rng = 1; rng < 100; rng += 1) {
-    const g = playDrawnNumber(drawing(positions, { discard: [JOKER, JOKER, JOKER], rng, ...extra }), { unit: 'p0-s1' });
-    if (g.drawn === JOKER) return g;
-  }
-  throw new Error('no seed picked a joker');
-}
-
-test('a joker from the campsite drafts a power instead; the unit stays', () => {
-  let g = jokerPick({ 'p0-s1': 3 });
-  assert.deepEqual(draftOptions(g), [POWERS.TOWER, POWERS.HERMIT]);
-  g = playDraft(g, 0);
-  assert.equal(g.held[0], POWERS.TOWER);
-  assert.equal(pos(g, 'p0-s1'), 5);
-  assert.equal(g.current, 1);
-});
-
-test('with powers off, a joker from the campsite does nothing', () => {
-  const base = createGame({ seed: 1, firstPlayer: 0, config: { powers: false } });
-  for (let rng = 1; rng < 100; rng += 1) {
-    let g = drawCard({
-      ...base,
-      rng,
-      units: base.units.map((u) => (u.id === 'p0-s1' ? { ...u, pos: 3 } : u)),
-      moveDecks: [{ draw: [2], discard: [JOKER, JOKER, JOKER] }, { draw: [1], discard: [] }],
-    });
-    g = playDrawnNumber(g, { unit: 'p0-s1' });
-    if (g.drawn !== JOKER) continue;
-    assert.ok(mustPassJoker(g));
-    g = passJoker(g);
-    assert.equal(pos(g, 'p0-s1'), 5);
-    assert.equal(g.current, 1);
-    return;
-  }
-  assert.fail('no seed picked a joker');
 });
 
 test('a capture on the campsite happens before the unit moves on', () => {

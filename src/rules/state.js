@@ -13,7 +13,7 @@
 //   held,                per player: power id or null
 //   drawn,               the card being resolved, or null
 //   hanged,              null, or { stage: 'back', unit, enemy } while a Hanged Man use resolves
-//   campsite,            null, or { unit } when `drawn` came from a campsite
+//   campsite,            null, or { unit } when `drawn` repeats a campsite landing
 //   hermit,              null, or { stage: 'move', steps } while a Hermit use resolves
 //   stars,               per player: stars collected (one per unit that died)
 //   bonusTurn,           true when a move this turn earned another turn

@@ -7,15 +7,15 @@
 //   hanged     { stage: 'back', unit, enemy } while a Hanged Man use is
 //              resolving: the card moves a unit backward (an opponent's unit
 //              when `enemy`); once one has moved, an extra turn follows
-//   campsite   { unit } when `drawn` was picked from the discard pile by a
-//              campsite landing; it moves `unit` forward
+//   campsite   { unit } after a campsite landing: `drawn` is the landing
+//              move's number again, and it moves `unit` forward
 //   hermit     { stage: 'move', steps } while the Hermit's card move is
 //              resolving: only moves onto a cell holding an ally, without an
 //              escort; on landing, that ally moves forward by `steps`
 //   bonusTurn  set when a move earned another turn (rules.towerExtraTurn)
 
 import { HOME, geometry } from './board.js';
-import { nextRandom, shuffle as shuffleCards } from './random.js';
+import { shuffle as shuffleCards } from './random.js';
 import { countDeaths, getUnit, nextPlayer, opponents } from './state.js';
 
 export const MAX_UNITS_PER_CELL = 2; // default; games use state.config.maxPerCell
@@ -192,17 +192,10 @@ export function endTurn(state, extraTurn = false) {
  * A random card from the current player's discard pile, picked with the
  * game's generator; the card stays in the pile. Null when the pile is empty.
  */
-function pickFromDiscard(state) {
-  const { discard } = state.moveDecks[state.current];
-  if (discard.length === 0) return null;
-  const r = nextRandom(state.rng);
-  return { rng: r.rng, card: discard[Math.floor(r.value * discard.length)] };
-}
-
 /**
  * Called once the drawn card has been resolved (a move, a pass or a draft).
- * `landing` is { unit, pos } after a card move, else null. Starts a campsite
- * card, gives the Hanged Man's extra turn, or ends the turn.
+ * `landing` is { unit, pos, steps } after a card move, else null. Starts a
+ * campsite repeat, gives the Hanged Man's extra turn, or ends the turn.
  */
 export function continueTurn(state, landing = null) {
   // The Hermit: the ally the unit landed on is pushed (instead of a campsite card).
@@ -211,8 +204,7 @@ export function continueTurn(state, landing = null) {
   const done = { ...state, drawn: null, campsite: null };
   // An opponent's unit moved back by the Hanged Man doesn't use the campsite.
   if (landing && g.isCampsiteAt(done.current, landing.pos) && !done.hanged?.enemy) {
-    const pick = pickFromDiscard(done);
-    if (pick) return { ...done, rng: pick.rng, drawn: pick.card, campsite: { unit: landing.unit } };
+    return { ...done, drawn: landing.steps, campsite: { unit: landing.unit } };
   }
   // The Hanged Man's extra turn needs a unit that moved with the card.
   if (done.hanged?.stage === 'back' && done.hanged.unit !== null) return endTurn({ ...done, hanged: null }, true);
@@ -305,7 +297,7 @@ export function applyLegalMove(state, move, steps) {
   const towerTurn = state.config.rules.towerExtraTurn && !backward && g.isTowerAt(player, target);
   const next = { ...state, units, stars, bonusTurn: Boolean(state.bonusTurn) || towerTurn };
   if (backward) next.hanged = { ...state.hanged, stage: 'back', unit: move.unit };
-  return continueTurn(next, { unit: move.unit, pos: target });
+  return continueTurn(next, { unit: move.unit, pos: target, steps });
 }
 
 /**

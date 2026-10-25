@@ -99,7 +99,7 @@ function botAction(m, pick, used) {
   }
 }
 
-function checkInvariants(g) {
+function checkInvariants(g, mixedOk = false) {
   assert.equal(g.units.length, 12);
   const byCell = new Map();
   for (const u of g.units) {
@@ -108,7 +108,8 @@ function checkInvariants(g) {
   }
   for (const [key, units] of byCell) {
     const teams = new Set(units.map((u) => u.player));
-    assert.ok(teams.size === 1, `two teams share ${key}`);
+    // The Devil's pull (no captures) can leave two teams on one cell.
+    assert.ok(mixedOk || teams.size === 1, `two teams share ${key}`);
     assert.ok(units.length <= 2, `more than two units on ${key}`);
   }
 }
@@ -121,6 +122,7 @@ test('bots can play complete games through the screen without errors', () => {
     const config = { powerTiming: seed % 2 ? 'afterDraw' : 'beforeDraw' };
     let m = initModel(R.createGame({ seed, config }));
     let steps = 0;
+    let devilUsed = false;
     while (m.game.winner === null) {
       steps += 1;
       assert.ok(steps < 40000, `seed ${seed}: game did not finish`);
@@ -132,8 +134,10 @@ test('bots can play complete games through the screen without errors', () => {
       if (m.game.hanged?.enemy) seen.add('enemy back');
       const next = update(m, action);
       assert.notEqual(next, m, `seed ${seed}: action ${JSON.stringify(action)} did nothing`);
+      const p = m.game.current;
+      if (m.game.held[p] === R.POWERS.DEVIL && next.game.held[p] !== R.POWERS.DEVIL) devilUsed = true;
       m = next;
-      checkInvariants(m.game);
+      checkInvariants(m.game, devilUsed);
     }
     assert.ok(view(m).includes('overlay'));
     assert.ok(m.game.units.filter((u) => u.player === m.game.winner).every((u) => u.pos === R.ASCENDED));
@@ -256,7 +260,7 @@ test('The Hanged Man: back with the drawn card, then an extra turn', () => {
   assert.ok(interactions(m).tappable.length > 1, 'any unit can move');
 });
 
-test('landing on the campsite shows the card from your discard pile and moves that unit again', () => {
+test('landing on the campsite shows the repeated card and moves that unit again', () => {
   let m = modelWith({ 'p0-s1': 3, 'p0-s2': 1 }, {
     moveDecks: [{ draw: [2], discard: [] }, { draw: [1], discard: [] }],
   });
@@ -269,7 +273,7 @@ test('landing on the campsite shows the card from your discard pile and moves th
   assert.deepEqual(interactions(m).tappable, ['shared-2']);
   const html = view(m);
   assert.ok(html.includes('Campsite · move that unit 2 again'));
-  assert.ok(html.includes('From discard'));
+  assert.ok(html.includes('Repeat'));
   m = update(m, { type: 'tap', key: 'shared-2' });
   m = update(m, { type: 'confirm' });
   assert.equal(R.getUnit(m.game, 'p0-s1').pos, 7);

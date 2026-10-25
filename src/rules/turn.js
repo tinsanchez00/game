@@ -10,7 +10,7 @@
 //
 // A turn can hold several cards. After a card is resolved the same player
 // may have to resolve another one (see continueTurn in moves.js):
-//   - a campsite landing sets `drawn` to a card from the discard pile
+//   - a campsite landing sets `drawn` to the landing move's number again
 //     (state.campsite), resolved the same way;
 //   - the Hanged Man resolves its card backward (hanged.stage 'back'; the
 //     opponent's units when upside down), then the same player takes an

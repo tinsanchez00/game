@@ -168,9 +168,9 @@ function unplay(fs, rec) {
 }
 
 /** After a card move landed on rec.t: a campsite card, then `cont`. */
-function afterLanding(fs, q, rec, cont, depth, ctx) {
+function afterLanding(fs, q, rec, d, cont, depth, ctx) {
   if (rec.won) return winFor(q, ctx);
-  if (fs.camp[rec.t]) return campsite(fs, q, rec.u, cont, depth, ctx);
+  if (fs.camp[rec.t]) return campsite(fs, q, rec.u, d, cont, depth, ctx);
   return proceed(fs, q, cont, depth, ctx);
 }
 
@@ -186,7 +186,7 @@ function bestMove(fs, q, d, back, only, cont, depth, ctx) {
   let best = worst(ctx, q);
   for (const [u, e] of moves) {
     const rec = play(fs, q, u, e, d, back);
-    const v = afterLanding(fs, q, rec, back ? EXTRA : cont, depth, ctx);
+    const v = afterLanding(fs, q, rec, d, back ? EXTRA : cont, depth, ctx);
     unplay(fs, rec);
     if (isBetter(v, best)) best = v;
   }
@@ -331,27 +331,14 @@ function hangedCard(fs, q, k, upside, depth, ctx) {
 }
 
 /**
- * A campsite card for `unit`: random from q's discard pile, then `cont`.
- * The extra draw uses up a turn of look-ahead.
+ * A campsite landing: `unit` moves forward d again (when it can), then `cont`.
+ * Each repeat uses up a turn of look-ahead, which bounds chains.
  */
-function campsite(fs, q, unit, cont, depth0, ctx) {
+function campsite(fs, q, unit, d, cont, depth0, ctx) {
   const depth = depth0 - 1;
   if (depth <= 0) return leaf(fs, ctx);
-  const { counts, total } = discardCounts(fs, q);
-  let value = 0;
-  for (let k = 0; k <= fs.J; k += 1) {
-    const cnt = counts[k];
-    if (!cnt) continue;
-    let v;
-    if (k < fs.J) {
-      v = bestMove(fs, q, fs.values[k], false, unit, cont, depth, ctx);
-      if (v === undefined) v = proceed(fs, q, cont, depth, ctx);
-    } else {
-      v = jokerValue(fs, q, cont, depth, ctx);
-    }
-    value += (cnt / total) * v;
-  }
-  return value;
+  const v = bestMove(fs, q, d, false, unit, cont, depth, ctx);
+  return v === undefined ? proceed(fs, q, cont, depth, ctx) : v;
 }
 
 /**
@@ -374,7 +361,7 @@ function hermitMove(fs, q, u, d, depth, ctx) {
     }
     if (ally >= 0 && canPushAlone(fs, ally, d)) {
       const push = play(fs, q, ally, -1, d, false);
-      v = afterLanding(fs, q, push, END, depth, ctx);
+      v = afterLanding(fs, q, push, d, END, depth, ctx);
       unplay(fs, push);
     } else {
       v = endTurn(fs, q, depth, ctx);
@@ -604,7 +591,7 @@ export function powerBot(options = {}) {
             action: { kind: 'move', move: engineMove(fs, m) },
             value: () => {
               const rec = play(fs, me, m[0], m[1], d, back);
-              const v = afterLanding(fs, me, rec, back ? EXTRA : cont, depth, ctx);
+              const v = afterLanding(fs, me, rec, d, back ? EXTRA : cont, depth, ctx);
               unplay(fs, rec);
               return v;
             },

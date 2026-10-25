@@ -55,7 +55,7 @@ const TEXT = {
   left: (n) => `${n} restantes`,
   drawn: 'Robada',
   drawCard: 'Robar una carta',
-  campCard: 'Desde descarte',
+  campCard: 'Repetir', // placeholder wording
   discard: 'Descarte',
   discardEmpty: 'vacío',
   jokerShort: 'C',

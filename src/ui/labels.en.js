@@ -55,7 +55,7 @@ const TEXT = {
   left: (n) => `${n} left`,
   drawn: 'Drawn',
   drawCard: 'Draw a card',
-  campCard: 'From discard',
+  campCard: 'Repeat', // placeholder wording
   discard: 'Discard',
   discardEmpty: 'empty',
   jokerShort: 'J',
