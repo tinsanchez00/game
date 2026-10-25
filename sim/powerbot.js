@@ -361,7 +361,7 @@ function hermitMove(fs, q, u, d, depth, ctx) {
     }
     if (ally >= 0 && canPushAlone(fs, ally, d)) {
       const push = play(fs, q, ally, -1, d, false);
-      v = afterLanding(fs, q, push, d, END, depth, ctx);
+      v = (push.won ? winFor(q, ctx) : proceed(fs, q, END, depth, ctx));
       unplay(fs, push);
     } else {
       v = endTurn(fs, q, depth, ctx);

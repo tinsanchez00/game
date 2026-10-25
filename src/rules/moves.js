@@ -12,6 +12,7 @@
 //   hermit     { stage: 'move', steps } while the Hermit's card move is
 //              resolving: only moves onto a cell holding an ally, without an
 //              escort; on landing, that ally moves forward by `steps`
+//              (stage 'push' while that ally's move resolves)
 //   bonusTurn  set when a move earned another turn (rules.towerExtraTurn)
 
 import { HOME, geometry } from './board.js';
@@ -201,9 +202,11 @@ export function continueTurn(state, landing = null) {
   // The Hermit: the ally the unit landed on is pushed (instead of a campsite card).
   if (state.hermit?.stage === 'move' && landing) return pushAlly(state, landing);
   const g = geometry(state.config);
-  const done = { ...state, drawn: null, campsite: null };
-  // An opponent's unit moved back by the Hanged Man doesn't use the campsite.
-  if (landing && g.isCampsiteAt(done.current, landing.pos) && !done.hanged?.enemy) {
+  const pushed = state.hermit?.stage === 'push';
+  const done = { ...state, drawn: null, campsite: null, hermit: null };
+  // An opponent's unit moved back by the Hanged Man, or an ally pushed by the
+  // Hermit, doesn't use the campsite.
+  if (landing && !pushed && g.isCampsiteAt(done.current, landing.pos) && !done.hanged?.enemy) {
     return { ...done, drawn: landing.steps, campsite: { unit: landing.unit } };
   }
   // The Hanged Man's extra turn needs a unit that moved with the card.
@@ -232,8 +235,8 @@ export function drawTurnCard(state) {
 
 /**
  * After the Hermit's card move landed `landing.unit` on an ally: that ally
- * moves forward by the same number, alone, as a normal card move (it may
- * capture and trigger the campsite). If it can't move, it stays.
+ * moves forward by the same number, alone (it may capture; it doesn't
+ * trigger the campsite). If it can't move, it stays.
  */
 function pushAlly(state, landing) {
   const { steps } = state.hermit;
@@ -241,7 +244,7 @@ function pushAlly(state, landing) {
   const ally = base.units.find((u) => u.player === base.current && u.id !== landing.unit && u.pos === landing.pos);
   if (!ally) return endTurn(base);
   const valid = legalMoves(base, base.current, steps).some((m) => m.unit === ally.id && !m.escort);
-  return valid ? applyLegalMove(base, { unit: ally.id }, steps) : endTurn(base);
+  return valid ? applyLegalMove({ ...base, hermit: { stage: 'push' } }, { unit: ally.id }, steps) : endTurn(base);
 }
 
 // --- single-unit power moves -----------------------------------------------------------

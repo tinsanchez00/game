@@ -63,12 +63,13 @@ test('Hermit: no escort; the commander moves alone', () => {
   assert.ok(moves.every((m) => !m.escort));
 });
 
-test("Hermit: the ally's landing triggers the campsite", () => {
+test("Hermit: the ally's landing doesn't trigger the campsite", () => {
   const g = usePower(playing({ 'p0-s1': 1, 'p0-s2': 3 }, { deck: [2, 1, 3] }));
   const after = playDrawnNumber(g, { unit: 'p0-s1' });
   assert.equal(pos(after, 'p0-s2'), 5);
-  assert.equal(after.current, 0, 'a campsite card follows');
-  assert.equal(after.campsite?.unit, 'p0-s2');
+  assert.equal(after.campsite, null);
+  assert.equal(after.hermit, null);
+  assert.equal(after.current, 1, 'the turn ends');
 });
 
 test("Hermit: landing on an ally on the campsite doesn't draw the mover's own campsite card", () => {
